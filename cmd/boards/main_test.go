@@ -157,8 +157,16 @@ func TestReportIsMeasuredOrNull(t *testing.T) {
 	}
 }
 
-func TestRunRefusesWithoutDryRun(t *testing.T) {
-	if code := run([]string{"run", "--adapter", "../../adapters/dummy/oracle", "--cases", casesDir}); code != exitUsage {
-		t.Errorf("exit %d, want %d: there is no real testbed yet", code, exitUsage)
+// A live run refuses before touching any cluster when the lock is bad or
+// the cluster to reuse is not one boards built.
+func TestLiveRunRefusesEarly(t *testing.T) {
+	for name, extra := range map[string][]string{
+		"missing lock":  {"--lock", filepath.Join(t.TempDir(), "none.lock")},
+		"foreign reuse": {"--lock", "../../testbed/testbed.lock", "--reuse", "kind-meshmedic-demo"},
+	} {
+		args := append([]string{"run", "--adapter", "../../adapters/dummy/oracle", "--cases", casesDir, "--out", t.TempDir()}, extra...)
+		if code := run(args); code != exitUsage {
+			t.Errorf("%s: exit %d, want %d", name, code, exitUsage)
+		}
 	}
 }

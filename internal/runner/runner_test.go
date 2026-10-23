@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/Git-Hospital/boards/internal/execx"
 	"github.com/Git-Hospital/boards/internal/score"
 	"github.com/Git-Hospital/boards/internal/testbed"
+	"github.com/Git-Hospital/boards/internal/verdict"
 )
 
 // recording wraps the fake testbed and remembers whether each reset ran
@@ -119,5 +121,24 @@ func TestWatcherPatchIsTheOneApplied(t *testing.T) {
 	got := score.Score(c, a, []score.Run{run})
 	if ax := got.Axes[score.Remediation]; ax.Status != score.Pass {
 		t.Errorf("remediation %s (%s), want pass", ax.Status, ax.Reason)
+	}
+}
+
+// stuckPatch is a testbed whose patches cannot be removed.
+type stuckPatch struct{ *testbed.Fake }
+
+func (stuckPatch) RemovePatch(context.Context, *casefile.Case, *verdict.Patch) error {
+	return errors.New("conflict")
+}
+
+// A patch left in the cluster makes the case inconclusive, and the run
+// must stop: later cases would not run on the testbed.
+func TestUnremovedPatchIsDirty(t *testing.T) {
+	tb := stuckPatch{testbed.NewFake(execx.BaseEnv(t.TempDir()))}
+	a := tool(t, "one-shot", "echo '"+verdictWithPatch+"' > verdict.json\n")
+	c := testCase(time.Minute, time.Minute)
+	got := newRunner(t, tb, a).Case(context.Background(), c)
+	if got.Runs[0].Inconclusive != DirtyPatch || !Dirty(got) {
+		t.Errorf("inconclusive %q, dirty %v", got.Runs[0].Inconclusive, Dirty(got))
 	}
 }

@@ -76,12 +76,12 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 
 	work := filepath.Join(r.cfg.Work, strings.ReplaceAll(c.ID, "/", "_"), string(twin))
 	if err := os.MkdirAll(work, 0o755); err != nil {
-		run.Inconclusive = "testbed_failed"
+		run.Inconclusive = DirtyTestbed
 		return run
 	}
 
 	if err := r.tb.Quiesce(ctx, r.cfg.Quiesce); err != nil {
-		run.Inconclusive = interrupted(ctx, "testbed_failed")
+		run.Inconclusive = interrupted(ctx, DirtyTestbed)
 		return run
 	}
 
@@ -100,7 +100,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 		if err := r.tb.Reset(cleanup, c, twin); err != nil {
 			r.cfg.Log("  reset failed: %v", err)
 			if run.Inconclusive == "" {
-				run.Inconclusive = "reset_failed"
+				run.Inconclusive = DirtyReset
 			}
 		}
 	}()
@@ -127,7 +127,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	injected = true
 	if err := r.tb.Inject(ctx, c, twin); err != nil {
 		r.cfg.Log("  inject failed: %v", err)
-		run.Inconclusive = interrupted(ctx, "testbed_failed")
+		run.Inconclusive = interrupted(ctx, DirtyTestbed)
 		stopTool()
 		return run
 	}
@@ -184,13 +184,18 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	if p := run.Patch; p != nil && twin == casefile.TwinDefect && c.Expect.Remediation != nil &&
 		r.tool.ProposesFixes && !slices.Contains(c.Expect.Remediation.Forbid, p.Class) {
 		run.Remedy = r.remedy(ctx, cleanup, c, p)
+		if run.Remedy.Applied && !run.Remedy.Removed {
+			// The tool's patch is still in the cluster, so nothing that runs
+			// after this case can be trusted.
+			run.Inconclusive = DirtyPatch
+		}
 	}
 
 	run.DefectEndedAt = r.now()
 	injected = false
 	if err := r.tb.Reset(cleanup, c, twin); err != nil {
 		r.cfg.Log("  reset failed: %v", err)
-		run.Inconclusive = "reset_failed"
+		run.Inconclusive = DirtyReset
 	}
 
 	if watcher {
@@ -293,26 +298,33 @@ func (r *Runner) remedy(ctx, cleanup context.Context, c *casefile.Case, p *verdi
 		return m
 	}
 	m.Applied, m.AppliedAt = true, r.now()
+	// Healed is judged on the state the patch must reach within
+	// healsWithin: the defect's condition gone and every clean-twin check
+	// holding, together. The checks lag the defect by their rate window,
+	// so they are polled with it rather than read once.
 	deadline := r.now().Add(c.Expect.Remediation.HealsWithin.Duration)
 	for {
 		st, err := r.tb.Defect(ctx, c)
 		if err == nil && st != testbed.Holds {
-			m.Healed, m.HealedAt = true, r.now()
-			break
+			if m.HealedAt.IsZero() {
+				m.HealedAt = r.now()
+			}
+			m.CleanOK, m.Detail = true, ""
+			for i, o := range c.CleanTwin.Checks {
+				st, err := r.tb.Check(ctx, c, o)
+				if err != nil || st != testbed.Holds {
+					m.CleanOK = false
+					m.Detail = fmt.Sprintf("clean-twin check %d: %s", i, describe(st, err))
+					break
+				}
+			}
+			if m.CleanOK {
+				m.Healed = true
+				break
+			}
 		}
 		if !r.now().Before(deadline) || sleep(ctx, r.cfg.Poll) != nil {
 			break
-		}
-	}
-	if m.Healed {
-		m.CleanOK = true
-		for i, o := range c.CleanTwin.Checks {
-			st, err := r.tb.Check(ctx, c, o)
-			if err != nil || st != testbed.Holds {
-				m.CleanOK = false
-				m.Detail = fmt.Sprintf("clean-twin check %d: %s", i, describe(st, err))
-				break
-			}
 		}
 	}
 	if err := r.tb.RemovePatch(cleanup, c, p); err != nil {
@@ -366,6 +378,25 @@ func sleep(ctx context.Context, d time.Duration) error {
 
 func sleepUntil(ctx context.Context, at time.Time, now func() time.Time) error {
 	return sleep(ctx, at.Sub(now()))
+}
+
+// Reasons a twin leaves the testbed in an unknown state. The run must stop:
+// every later case would run on a cluster that is not the testbed.
+const (
+	DirtyReset   = "reset_failed"
+	DirtyPatch   = "patch_not_removed"
+	DirtyTestbed = "testbed_failed"
+)
+
+// Dirty reports whether a case left the testbed unusable.
+func Dirty(c score.Case) bool {
+	for _, r := range c.Runs {
+		switch r.Inconclusive {
+		case DirtyReset, DirtyPatch, DirtyTestbed:
+			return true
+		}
+	}
+	return false
 }
 
 // ErrNoCases is returned when a selection is empty.

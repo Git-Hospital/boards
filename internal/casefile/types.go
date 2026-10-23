@@ -218,6 +218,16 @@ type Remediation struct {
 	// output is a report, "fail" where a mechanical fix exists.
 	NoPatch     string   `yaml:"noPatch"`
 	HealsWithin Duration `yaml:"healsWithin"`
+	// Reference is a known fix in an accepted class, as a kubernetes-yaml
+	// file next to the case. The oracle dummy proposes it, so a live run
+	// proves the case can be healed and that its heal checks work.
+	Reference *Reference `yaml:"reference"`
+}
+
+// Reference names a known fix.
+type Reference struct {
+	Class string `yaml:"class"`
+	File  string `yaml:"file"`
 }
 
 // Value is one expected measurement and how close a tool must come.
@@ -257,6 +267,21 @@ const (
 )
 
 // Twins returns the runs a case needs, in order.
+// Steps returns the inject and reset steps of one twin. The clean twin's
+// may be empty: it then runs on the untouched testbed.
+func (c *Case) Steps(twin Twin) (inject, reset []Step) {
+	switch twin {
+	case TwinClean:
+		if c.CleanTwin != nil {
+			return c.CleanTwin.Inject, c.CleanTwin.Reset
+		}
+		return nil, nil
+	case TwinFixture:
+		return nil, nil
+	}
+	return c.Inject, c.Reset
+}
+
 func (c *Case) Twins() []Twin {
 	switch {
 	case c.Kind == KindControl:

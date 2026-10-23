@@ -1,0 +1,20 @@
+# Reference fix: the payments VirtualService as testbed/mesh/app/payments.yaml
+# ships it, without the fault stanza.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: payments
+  namespace: demo
+spec:
+  hosts:
+    - payments
+  http:
+    - route:
+        - destination:
+            host: payments
+            subset: v1
+          weight: 80
+        - destination:
+            host: payments
+            subset: v2
+          weight: 20

@@ -9,18 +9,17 @@ import (
 	"time"
 
 	"github.com/Git-Hospital/boards/internal/casefile"
+	"github.com/Git-Hospital/boards/internal/oracle"
 	"github.com/Git-Hospital/boards/internal/verdict"
 )
 
-// State is the answer of an oracle. NoData is its own state: an empty query
-// result is neither "the defect is live" nor "the defect is gone", and it
-// never counts as healed (D12).
-type State string
+// State is the answer of an oracle (see package oracle).
+type State = oracle.State
 
 const (
-	Holds  State = "holds"
-	Absent State = "absent"
-	NoData State = "no-data"
+	Holds  = oracle.Holds
+	Absent = oracle.Absent
+	NoData = oracle.NoData
 )
 
 // Info describes a testbed for the report.
@@ -31,6 +30,8 @@ type Info struct {
 	// the official table (D18).
 	Standard   bool   `json:"standard"`
 	LockDigest string `json:"lockDigest,omitempty"`
+	// Notes say why a testbed is not standard.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // Testbed runs the steps of a case and answers its oracles.

@@ -1,0 +1,17 @@
+# Reference fix: send every request to the healthy v1 subset. This is the
+# payments VirtualService from testbed/mesh/app/payments.yaml with the
+# canary's weight moved to v1.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: payments
+  namespace: demo
+spec:
+  hosts:
+    - payments
+  http:
+    - route:
+        - destination:
+            host: payments
+            subset: v1
+          weight: 100

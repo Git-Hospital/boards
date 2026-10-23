@@ -59,4 +59,5 @@ expect:
     forbid: [outlier-ejection, backend-change]
     noPatch: pass   # naming the VirtualService and its fault stanza is a full answer
     healsWithin: 5m
+    reference: {class: remove-fault, file: fix-remove-fault.yaml}
 rubric: ground-truth.md

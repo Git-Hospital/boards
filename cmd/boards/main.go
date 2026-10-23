@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -201,6 +202,10 @@ func cmdRun(args []string) int {
 	var ids multi
 	fs.Var(&ids, "case", "run this case (repeatable); default all")
 	dry := fs.Bool("dry-run", false, "use the fake testbed: tests boards itself, never a tool")
+	lockPath := fs.String("lock", "testbed/testbed.lock", "the testbed lock (D18)")
+	keep := fs.Bool("keep", false, "leave the kind cluster running afterwards")
+	reuse := fs.String("reuse", "", "run on this existing boards-built cluster instead of creating one; the run is not standard")
+	quiesce := fs.Duration("quiesce", 150*time.Second, "pause before each twin so earlier signals decay out of the rate windows")
 	out := fs.String("out", "", "output directory (default boards-out/<time>)")
 	suite := fs.String("suite", "unreleased", "suite version recorded in the report")
 	baseline := fs.String("baseline", "", "report.json to compare with; any case axis worse than it fails the run")
@@ -209,11 +214,6 @@ func cmdRun(args []string) int {
 	}
 	if *adapterDir == "" {
 		fmt.Fprintln(os.Stderr, "run: --adapter is required")
-		return exitUsage
-	}
-	if !*dry {
-		// The kind testbed is the next step of v0.2.0 (architecture §1).
-		fmt.Fprintln(os.Stderr, "run: only --dry-run exists in this build; the kind testbed is not implemented yet")
 		return exitUsage
 	}
 
@@ -267,13 +267,53 @@ func cmdRun(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	tb := testbed.NewFake(execx.BaseEnv(absHome))
-	absWork, _ := filepath.Abs(filepath.Join(outDir, "work"))
-	rn := runner.New(runner.Config{
-		Work:       absWork,
-		SkipSettle: true, // the dry-run testbed has no signals to settle
-		Log:        func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) },
-	}, tb, tool)
+	logf := func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) }
+	cfg := runner.Config{Log: logf}
+	cfg.Work, _ = filepath.Abs(filepath.Join(outDir, "work"))
+
+	var tb testbed.Testbed
+	if *dry {
+		tb = testbed.NewFake(execx.BaseEnv(absHome))
+		cfg.SkipSettle = true // the dry-run testbed has no signals to settle
+	} else {
+		if slices.ContainsFunc(runnable, func(c *casefile.Case) bool { return c.Track != casefile.TrackMesh }) {
+			fmt.Fprintln(os.Stderr, "run: only the mesh track has a testbed in this build; pass --track mesh")
+			return exitUsage
+		}
+		lock, err := testbed.LoadLock(*lockPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return exitUsage
+		}
+		name, isReuse := *reuse, *reuse != ""
+		if !isReuse {
+			name = testbed.ClusterPrefix + time.Now().UTC().Format("0102-150405")
+		}
+		private, err := os.MkdirTemp("", "boards-testbed-")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return exitUsage
+		}
+		defer os.RemoveAll(private)
+		k, err := testbed.StartKind(ctx, testbed.KindOptions{
+			Lock: lock, Name: name, Reuse: isReuse, Keep: *keep, Dir: private, Log: logf,
+		})
+		if k != nil {
+			defer func() {
+				if err := k.Close(context.Background()); err != nil {
+					logf("testbed: %v", err)
+				}
+			}()
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return exitUsage
+		}
+		tb = k
+		cfg.Quiesce = *quiesce
+		cfg.LiveTimeout = 10 * time.Minute
+	}
+	rn := runner.New(cfg, tb, tool)
 
 	started := time.Now()
 	var results []score.Case
@@ -287,6 +327,10 @@ func cmdRun(args []string) int {
 			}
 		}
 		if ctx.Err() != nil {
+			break
+		}
+		if runner.Dirty(res) {
+			logf("stopping: %s left the testbed in an unknown state; %d case(s) not run", c.ID, len(runnable)-len(results))
 			break
 		}
 	}

@@ -1,0 +1,23 @@
+# Reference fix: roll the client back to the target it had before the bad
+# change, http://payments:9090/, as testbed/mesh/app/payments.yaml ships it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+          command: ["sh", "-c"]
+          args:
+            - while true; do curl -s -o /dev/null http://payments:9090/; sleep 0.2; done

@@ -7,12 +7,26 @@
 > design in [docs/architecture.md](docs/architecture.md).
 >
 > What exists today: the Go core (`cmd/boards`), the 11 scenarios below as
-> `cases/mesh/<id>/case.yaml`, and three dummy tools that test the scorer on
-> every PR. It runs in dry-run mode only (`boards run --dry-run --adapter
-> adapters/dummy/oracle`), which tests boards itself and never a tool. Until
-> the kind testbed lands, live runs still use `harness/run.sh` and the
-> scripts in `scenarios/`, as described below. Each scenario's ground truth
-> now lives next to its case, in `cases/mesh/<id>/ground-truth.md`.
+> `cases/mesh/<id>/case.yaml`, three dummy tools that test the scorer on
+> every PR, and the mesh testbed. `boards run` builds a kind cluster from
+> [`testbed/testbed.lock`](testbed/testbed.lock) (Istio ambient,
+> Prometheus and the payments/ledger app), runs the cases against one tool,
+> and deletes the cluster:
+>
+> ```console
+> $ go build -o boards ./cmd/boards
+> $ ./boards run --adapter adapters/dummy/oracle --track mesh --case mesh/error-surge --keep
+> $ ./boards run --adapter adapters/dummy/oracle --track mesh --reuse boards-<name>   # not standard
+> $ ./boards run --adapter adapters/dummy/oracle --dry-run                           # no cluster
+> ```
+>
+> It needs Docker, `kind`, `kubectl` and `istioctl` at the locked versions.
+> It never touches your own clusters. Every command gets a private kubeconfig
+> and an empty HOME, and `--reuse` accepts only a cluster boards built
+> itself. Real tool adapters come next. Until then, tool runs still use
+> `harness/run.sh` and the scripts in `scenarios/`, as described below. Each
+> scenario's ground truth now lives next to its case, in
+> `cases/mesh/<id>/ground-truth.md`.
 
 Reproducible service mesh failure scenarios, with ground truth, for scoring
 how well diagnostic and remediation tools handle mesh-layer incidents.
