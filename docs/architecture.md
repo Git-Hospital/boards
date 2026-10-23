@@ -191,13 +191,13 @@ Each axis is scored per case: pass, partial or fail, or `null` with a reason. A 
 - *Detection:*
   - pass: the tool alarmed within `alarmWithin` on the defect twin;
   - partial: it alarmed later, inside the window;
-  - fail: it did not alarm, or alarmed only after the defect was gone.
+  - fail: it did not alarm, or alarmed only after boards began the reset.
   - The clock starts when the defect is observable: after inject, the case's `settle` time and the oracle seeing the defect. An alarm before that counts as immediate, so a slow oracle is never charged to the tool.
 - *Diagnosis:*
   - structured output is matched against `expect.culprits` by machine. The best level matched wins: level 2 is a pass, level 1 is partial.
   - naming a `quiet` entity as a culprit is a fail, and is counted as false blame.
   - prose output is scored by two raters against the rubric, and both scores go to `scores.csv`. If they differ by more than one level, a third rater decides (D11).
-- *Resolves:* once the defect is gone, the tool's alarm clears within the case's `resolvesWithin`. The defect is gone when the tool's own patch healed it, or else when boards begins the reset. This is the fourth of meshmedic-prove's assertions. It is `null` (`tool_one_shot`) for one-shot tools, which never hold an alarm open.
+- *Resolves:* the tool's alarm is clear `resolvesWithin` after boards begins the reset. Clearing while the defect is still live is a fail. Clearing after the tool's own patch went in and healed the defect counts, even though boards then removes the patch and the defect returns until the reset; a tool that re-alarms then must resolve again. This is the fourth of meshmedic-prove's assertions. It is `null` (`tool_one_shot`) for one-shot tools, which never hold an alarm open.
 - *Remediation:*
   - pass: four things held. The patch applied. The oracle cleared within `healsWithin` (with traffic present). The `cleanTwin.checks` still passed. The patch could be removed.
   - partial: the patch healed, but its class is not in `expect.remediation.class`. An example is a restart that happened to clear the signal when the expected fix was a rollback. The class comes from the adapter's mapping of the tool's patch.
