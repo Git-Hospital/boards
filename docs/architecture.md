@@ -152,11 +152,11 @@ alarm: "an incident report with a firing scenario"     # what counts as an alarm
 culprits: "the workload labels in the report's evidence"
 ```
 
-The runner calls `run --case <dir> --work <dir> --window <duration>`. It provides the following, and nothing else from the user's environment:
+The runner calls `run --case-id <id> --twin <twin> --work <dir> --window <duration>`. A dummy adapter gets `--case <dir>` instead, because answering from the case file is its job. A real tool never gets the case directory: it holds the expected culprits, the reference fix and the rubric. The runner provides the following, and nothing else from the user's environment:
 - `KUBECONFIG`, set to the private kubeconfig, which contains only the cluster boards created;
 - `HOME`, set to a scratch directory, so a bare `kubectl` cannot fall back to `~/.kube/config`;
 - `BOARDS_PROMETHEUS`;
-- the case's `target`, as `BOARDS_TARGET_*`;
+- the case's `target`, as `BOARDS_TARGET_*`. The target is the scope an operator would point the tool at (namespace and service, chart, repository). It never names a culprit, and validation rejects a case whose culprit is its target;
 - the secrets the adapter declares.
 
 The window starts only after the adapter's `warmup` has passed on the same cluster. The defect is injected after that. The adapter writes `verdict.json` into the work directory. Its raw tool output goes to `raw.txt` unedited.
