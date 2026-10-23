@@ -113,8 +113,8 @@ func TestWatcherPatchIsTheOneApplied(t *testing.T) {
 	if run.Patch == nil || run.Patch.Class != "rollback" {
 		t.Fatalf("applied patch %+v, want the rollback from the end of the window", run.Patch)
 	}
-	if run.Remedy == nil || !run.Remedy.Healed || run.Remedy.HealedAt.IsZero() {
-		t.Errorf("remedy %+v, want healed with a time", run.Remedy)
+	if run.Remedy == nil || !run.Remedy.Healed || !run.Remedy.Removed {
+		t.Errorf("remedy %+v, want healed and removed", run.Remedy)
 	}
 	got := score.Score(c, a, []score.Run{run})
 	if ax := got.Axes[score.Remediation]; ax.Status != score.Pass {

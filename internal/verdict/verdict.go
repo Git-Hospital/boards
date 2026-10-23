@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/Git-Hospital/boards/internal/casefile"
@@ -65,6 +66,41 @@ func (v *Verdict) FirstAlarm(since time.Time) (time.Time, bool) {
 // FirstResolve returns the first resolve at or after since.
 func (v *Verdict) FirstResolve(since time.Time) (time.Time, bool) {
 	return v.first("resolve", since)
+}
+
+// ClearedAt reports whether the tool's alarm is clear at the given moment,
+// and since when: the time of the resolve that began the clear stretch. A
+// tool that never alarmed is not "clear"; it reports false.
+func (v *Verdict) ClearedAt(at time.Time) (time.Time, bool) {
+	events := slices.Clone(v.Events)
+	slices.SortStableFunc(events, func(a, b Event) int { return a.At.Compare(b.At) })
+	var since time.Time
+	clear := false
+	for _, e := range events {
+		if e.At.After(at) {
+			break
+		}
+		switch e.Type {
+		case "alarm":
+			clear = false
+		case "resolve":
+			if !clear {
+				since, clear = e.At, true
+			}
+		}
+	}
+	return since, clear
+}
+
+// FinallyCleared is ClearedAt after the last event.
+func (v *Verdict) FinallyCleared() (time.Time, bool) {
+	var last time.Time
+	for _, e := range v.Events {
+		if e.At.After(last) {
+			last = e.At
+		}
+	}
+	return v.ClearedAt(last)
 }
 
 func (v *Verdict) first(kind string, since time.Time) (time.Time, bool) {

@@ -69,8 +69,9 @@ type Run struct {
 	// case's settle time passed and its oracle saw it. An alarm raised
 	// earlier counts as immediate.
 	DetectFrom time.Time `json:"detectFrom"`
-	// DefectEndedAt is when the defect stopped: the patch healed it, or
-	// boards began the reset. An alarm after it is not a detection.
+	// DefectEndedAt is when boards began the reset. A healed patch does not
+	// end the defect, because boards removes the patch before resetting. An
+	// alarm after it is not a detection.
 	DefectEndedAt time.Time `json:"defectEndedAt"`
 
 	// Patch is the patch boards acted on, read from the verdict at the end
@@ -84,9 +85,13 @@ type Run struct {
 // Remedy is what happened when boards applied the tool's patch (D12).
 type Remedy struct {
 	Applied bool `json:"applied"`
-	Healed  bool `json:"healed"`
-	// HealedAt is when the defect's condition stopped holding after the
-	// patch, the earliest moment a tool could rightly resolve.
+	// AppliedAt is when the patch went in. A tool that resolves after its
+	// own patch healed the defect resolved rightly.
+	AppliedAt time.Time `json:"appliedAt,omitempty"`
+	Healed    bool      `json:"healed"`
+	// HealedAt is when boards saw the defect's condition stop holding after
+	// the patch. It is informational: boards removes the patch once checked,
+	// so the defect returns until the reset, and scoring uses DefectEndedAt.
 	HealedAt time.Time `json:"healedAt,omitempty"`
 	CleanOK  bool      `json:"cleanOk"`
 	Removed  bool      `json:"removed"`
@@ -289,24 +294,32 @@ func resolves(c *casefile.Case, a *adapter.Adapter, r *Run) Axis {
 	if !ok || (!r.DefectEndedAt.IsZero() && alarm.After(r.DefectEndedAt)) {
 		return null("no_alarm")
 	}
-	// The defect was first gone when the tool's patch healed it, or else
-	// when boards began the reset.
-	gone := r.DefectEndedAt
-	if r.Remedy != nil && !r.Remedy.HealedAt.IsZero() {
-		gone = r.Remedy.HealedAt
-	}
-	if gone.IsZero() {
+	if r.DefectEndedAt.IsZero() {
 		return null("not_measured")
 	}
-	at, ok := r.Verdict.FirstResolve(gone)
-	if !ok {
+	// The alarm must be clear resolvesWithin after the reset. A tool that
+	// resolved when its own patch healed the defect, and stayed clear while
+	// boards removed the patch and reset, passes with no delay; one that
+	// re-alarmed when the defect came back must resolve again.
+	deadline := r.DefectEndedAt.Add(c.Expect.ResolvesWithin.Duration)
+	since, clear := r.Verdict.ClearedAt(deadline)
+	// Clearing while the defect was still live is not a resolve. The
+	// defect was gone after the reset, or after the tool's own patch went in
+	// if that patch healed it.
+	earliest := r.DefectEndedAt
+	if m := r.Remedy; m != nil && m.Healed && !m.AppliedAt.IsZero() {
+		earliest = m.AppliedAt
+	}
+	if clear && since.Before(earliest) {
+		return fail("resolved_while_live")
+	}
+	if !clear {
+		if last, late := r.Verdict.FinallyCleared(); late && last.After(deadline) {
+			return withValue(fail("resolved_after_deadline"), secs(last.Sub(r.DefectEndedAt)))
+		}
 		return fail("never_resolved")
 	}
-	after := at.Sub(gone)
-	if after > c.Expect.ResolvesWithin.Duration {
-		return withValue(fail("resolved_after_deadline"), secs(after))
-	}
-	return pass(secs(after))
+	return pass(secs(max(since.Sub(r.DefectEndedAt), 0)))
 }
 
 func quiet(r *Run) Axis {
@@ -326,7 +339,9 @@ func controlRemediation(a *adapter.Adapter, r *Run) Axis {
 	if why := r.crashed(); why != "" {
 		return fail(why)
 	}
-	if r.Patch != nil {
+	// Any patch against a healthy service counts, including one a watcher
+	// wrote after the window.
+	if r.Patch != nil || r.Verdict.Patch != nil {
 		return fail("patched_a_healthy_service")
 	}
 	return pass(nil)

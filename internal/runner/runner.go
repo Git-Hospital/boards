@@ -184,14 +184,9 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	if p := run.Patch; p != nil && twin == casefile.TwinDefect && c.Expect.Remediation != nil &&
 		r.tool.ProposesFixes && !slices.Contains(c.Expect.Remediation.Forbid, p.Class) {
 		run.Remedy = r.remedy(ctx, cleanup, c, p)
-		if run.Remedy.Healed {
-			run.DefectEndedAt = run.Remedy.HealedAt
-		}
 	}
 
-	if run.DefectEndedAt.IsZero() {
-		run.DefectEndedAt = r.now()
-	}
+	run.DefectEndedAt = r.now()
 	injected = false
 	if err := r.tb.Reset(cleanup, c, twin); err != nil {
 		r.cfg.Log("  reset failed: %v", err)
@@ -290,9 +285,14 @@ func (r *Runner) remedy(ctx, cleanup context.Context, c *casefile.Case, p *verdi
 	m := &score.Remedy{}
 	if err := r.tb.ApplyPatch(ctx, c, p); err != nil {
 		m.Detail = err.Error()
+		// A patch can fail halfway, or be interrupted, and leave objects
+		// behind; the reset only reverts the defect.
+		if err := r.tb.RemovePatch(cleanup, c, p); err == nil {
+			m.Removed = true
+		}
 		return m
 	}
-	m.Applied = true
+	m.Applied, m.AppliedAt = true, r.now()
 	deadline := r.now().Add(c.Expect.Remediation.HealsWithin.Duration)
 	for {
 		st, err := r.tb.Defect(ctx, c)

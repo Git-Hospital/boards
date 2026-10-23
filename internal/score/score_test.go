@@ -171,17 +171,34 @@ func TestDetectionClockStartsWhenObservable(t *testing.T) {
 	}
 }
 
-// A tool that resolves when its own patch heals the defect resolved in
-// time, even though boards resets later.
-func TestResolveAfterHeal(t *testing.T) {
-	c := meshCase()
-	healedAt := t0.Add(6 * time.Minute)
-	r := defect(&verdict.Verdict{Alarmed: true, Events: []verdict.Event{
-		{At: t0.Add(time.Minute), Type: "alarm"},
-		{At: healedAt.Add(30 * time.Second), Type: "resolve"},
-	}}, &Remedy{Applied: true, Healed: true, HealedAt: healedAt})
-	if got := resolves(c, tool("watcher"), &r); got.Status != Pass {
-		t.Errorf("%s (%s), want pass", got.Status, got.Reason)
+// Boards removes a healed patch before the reset, so the defect returns.
+// A tool that resolved at the heal and stayed clear passes; one that
+// re-alarmed must resolve again after the reset.
+func TestResolveAroundPatchRemoval(t *testing.T) {
+	c := meshCase() // resolvesWithin 2m; defect() resets at 10m
+	healedAt5m := &Remedy{Applied: true, Healed: true, Removed: true, AppliedAt: t0.Add(5 * time.Minute)}
+	ev := func(typ string, at time.Duration) verdict.Event { return verdict.Event{At: t0.Add(at), Type: typ} }
+	for name, tc := range map[string]struct {
+		events []verdict.Event
+		want   Status
+	}{
+		"resolved at the heal, stayed clear": {[]verdict.Event{ev("alarm", time.Minute), ev("resolve", 6*time.Minute)}, Pass},
+		"re-alarmed, resolved after reset":   {[]verdict.Event{ev("alarm", time.Minute), ev("resolve", 6*time.Minute), ev("alarm", 7*time.Minute), ev("resolve", 11*time.Minute)}, Pass},
+		"re-alarmed, never resolved":         {[]verdict.Event{ev("alarm", time.Minute), ev("resolve", 6*time.Minute), ev("alarm", 7*time.Minute)}, Fail},
+		"resolved before the patch went in":  {[]verdict.Event{ev("alarm", time.Minute), ev("resolve", 4*time.Minute)}, Fail},
+		"resolved too late":                  {[]verdict.Event{ev("alarm", time.Minute), ev("resolve", 13*time.Minute)}, Fail},
+	} {
+		r := defect(&verdict.Verdict{Alarmed: true, Events: tc.events}, healedAt5m)
+		if got := resolves(c, tool("watcher"), &r); got.Status != tc.want {
+			t.Errorf("%s: %s (%s), want %s", name, got.Status, got.Reason, tc.want)
+		}
+	}
+}
+
+func TestControlPatchAfterWindow(t *testing.T) {
+	r := Run{Twin: casefile.TwinControl, Verdict: &verdict.Verdict{Patch: &verdict.Patch{Class: "restart"}}}
+	if got := controlRemediation(tool("watcher"), &r); got.Status != Fail {
+		t.Errorf("%s, want fail for a patch written after the window", got.Status)
 	}
 }
 
