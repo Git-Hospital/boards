@@ -34,4 +34,4 @@ are scored on finding it, not on which of those surfaces they use.
 
 A practical reference for detecting this in Prometheus (exact metric,
 labels, PromQL, and the access-log alternative) is in
-[docs/ambient-l4-denial-telemetry.md](../../docs/ambient-l4-denial-telemetry.md).
+[docs/ambient-l4-denial-telemetry.md](../../../docs/ambient-l4-denial-telemetry.md).

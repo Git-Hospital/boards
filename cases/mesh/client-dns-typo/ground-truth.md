@@ -52,7 +52,7 @@ plus a `max_over_time` baseline to prove traffic used to flow; and once a
 detector knows traffic vanished, the caller's own logs and the most recent
 rollout diff usually hold the root cause verbatim. MeshMedic's triage layer
 does that, and it scores 6 / 6 here as of v1.0 (see
-[results/meshmedic.md](../../results/meshmedic.md)).
+[results/meshmedic.md](../../../results/meshmedic.md)).
 
 What the scenario measures is unchanged: breadth, meaning whether a tool can
 diagnose a client-side fault that lives outside the mesh's own metrics, and

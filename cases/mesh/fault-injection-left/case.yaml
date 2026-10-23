@@ -1,0 +1,62 @@
+id: mesh/fault-injection-left
+track: mesh
+kind: fault
+set: open
+title: A fault-injection stanza left on a production VirtualService
+provenance:
+  kind: synthetic
+  note: converted from scenarios/fault-injection-left of mesh-incidents-bench (July-August 2026)
+author: kassvl
+authorRelation: [meshmedic]
+contaminatedFor: [meshmedic]
+target: {namespace: demo, service: payments}
+inject:
+  - desc: abort half of payments' requests with 503, keeping the 80/20 split
+    run:
+      - kubectl
+      - -n
+      - demo
+      - patch
+      - virtualservice
+      - payments
+      - --type=merge
+      - -p
+      - '{"spec":{"http":[{"fault":{"abort":{"percentage":{"value":50},"httpStatus":503}},"route":[{"destination":{"host":"payments","subset":"v1"},"weight":80},{"destination":{"host":"payments","subset":"v2"},"weight":20}]}]}}'
+reset:
+  - run: [kubectl, -n, demo, patch, virtualservice, payments, --type=json, -p, '[{"op":"remove","path":"/spec/http/0/fault"}]']
+    allowFail: true
+cleanTwin:
+  checks:
+    - promql:
+        query: >-
+          sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments", response_code=~"2.."}[1m]))
+          / sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments"}[1m]))
+        op: ">"
+        value: 0.95
+oracle:
+  promql:
+    query: >-
+      sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments", destination_service_namespace="demo", response_flags="FI"}[1m]))
+    op: ">"
+    value: 0.5
+settle: 90s
+window: 6m
+expect:
+  alarmWithin: 6m
+  resolvesWithin: 6m
+  culprits:
+    - level: 2
+      all: [{kind: VirtualService, namespace: demo, name: payments}]
+    - level: 1
+      all: [{kind: Service, namespace: demo, name: payments}]
+  quiet:
+    - {kind: Deployment, namespace: demo, name: payments-v1}
+    - {kind: Deployment, namespace: demo, name: payments-v2}
+  remediation:
+    accept: [remove-fault]
+    # The failures are synthetic: ejecting endpoints or changing the backend
+    # treats a config fault as a broken build.
+    forbid: [outlier-ejection, backend-change]
+    noPatch: pass   # naming the VirtualService and its fault stanza is a full answer
+    healsWithin: 5m
+rubric: ground-truth.md

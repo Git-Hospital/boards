@@ -13,7 +13,16 @@ did not build the tool being scored. That is what breaks the home game.
 
 ## What a scenario is
 
-A scenario is a directory under `scenarios/<id>/` with four files. Each one
+> **During the move to boards** (see the README), a new scenario is written
+> as a case: `cases/mesh/<id>/case.yaml` plus its `ground-truth.md`. Copy
+> `cases/mesh/error-surge/`, run `go run ./cmd/boards validate`, and see
+> [docs/architecture.md](docs/architecture.md) §4 for every field. The
+> four-file shape below is what the 11 existing scenarios still use for live
+> runs until the kind testbed lands, and the rules further down apply to
+> both.
+
+A scenario is a directory under `scenarios/<id>/` with three scripts, and its
+ground truth lives in `cases/mesh/<id>/ground-truth.md`. Each one
 is small and does one job. Read an existing scenario such as
 `scenarios/error-surge/` before writing your own; the shapes below mirror it.
 
