@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""boards adapter for MeshMedic (https://github.com/Git-Hospital/meshmedic).
+
+Runs `meshmedic watch` against the case's target and keeps verdict.json
+current from MeshMedic's own JSON events, as architecture §"Adapter
+protocol" asks of a watcher. The mapping from MeshMedic's output to the
+verdict is fixed here and stated in adapter.yaml (D10); it reads what
+MeshMedic decided and adds nothing of its own.
+
+Only the standard library is used, so the adapter runs wherever boards and
+meshmedic do.
+"""
+
+import argparse
+import json
+import os
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+# MeshMedic's remediation actions and the boards patch class of each. An
+# action missing here is a new action this adapter has not been taught;
+# its patch is dropped and said so in raw.txt, never guessed.
+ACTION_CLASS = {
+    "enable-outlier-detection": "outlier-ejection",
+    "shift-traffic-to-stable": "traffic-shift",
+    "raise-connection-pool-limits": "pool-resize",
+    "scoped-permissive-fallback": "scoped-permissive",
+    "cap-ejection-percent": "cap-ejection",
+    "damp-retries": "damp-retries",
+    "scale-waypoint": "scale-waypoint",
+}
+
+
+def log(msg):
+    print("boards-adapter: " + msg, file=sys.stderr, flush=True)
+
+
+class State:
+    """What MeshMedic has said so far, folded into a verdict."""
+
+    def __init__(self, version):
+        self.version = version
+        self.events = []
+        self.culprits = []
+        self.patch = None
+        self.open = set()
+
+    def add(self, e):
+        key = (e["scenario"], json.dumps(e.get("params", {}), sort_keys=True))
+        if e["type"] == "incident":
+            self.open.add(key)
+            self.events.append({"at": e["time"], "type": "alarm"})
+            for c in e.get("culprits") or []:
+                entity = {"kind": c["kind"], "name": c["name"]}
+                if c.get("namespace"):
+                    entity["namespace"] = c["namespace"]
+                if entity not in self.culprits:
+                    self.culprits.append(entity)
+            # The first proposed change is the one an operator would get
+            # first; later incidents do not replace it.
+            if self.patch is None and e.get("patch"):
+                cls = ACTION_CLASS.get(e.get("action", ""))
+                if cls is None:
+                    log("action %r has no patch class in this adapter; its patch is not scored" % e.get("action"))
+                else:
+                    self.patch = {"class": cls, "format": "kubernetes-yaml", "content": e["patch"]}
+        elif e["type"] == "resolved":
+            # The alarm clears only when every open incident has resolved;
+            # one scenario recovering while another fires is not a clear.
+            self.open.discard(key)
+            if not self.open:
+                self.events.append({"at": e["time"], "type": "resolve"})
+
+    def verdict(self):
+        return {
+            "schemaVersion": "boards.verdict/v1",
+            "tool": {"name": "meshmedic", "version": self.version},
+            "alarmed": any(ev["type"] == "alarm" for ev in self.events),
+            "events": self.events,
+            "culprits": self.culprits,
+            "ruleIds": [],
+            "patch": self.patch,
+            "measurements": {},
+            "prose": None,
+            "tokens": None,
+        }
+
+
+def write_verdict(work, state):
+    fd, tmp = tempfile.mkstemp(dir=work, prefix=".verdict-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(state.verdict(), f, indent=2)
+        f.write("\n")
+    os.replace(tmp, os.path.join(work, "verdict.json"))
+
+
+def tool_version(binary):
+    try:
+        out = subprocess.run([binary, "version"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired) as err:
+        log("meshmedic version: %s" % err)
+        return "unknown"
+    parts = out.split()
+    return parts[1] if len(parts) >= 2 else "unknown"
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("command", choices=["run"])
+    p.add_argument("--case-id", required=True)
+    p.add_argument("--twin", required=True)
+    p.add_argument("--work", required=True)
+    p.add_argument("--window", required=True)
+    args = p.parse_args()
+
+    prometheus = os.environ.get("BOARDS_PROMETHEUS", "")
+    ns = os.environ.get("BOARDS_TARGET_NAMESPACE", "")
+    svc = os.environ.get("BOARDS_TARGET_SERVICE", "")
+    if not (prometheus and ns and svc):
+        log("needs BOARDS_PROMETHEUS, BOARDS_TARGET_NAMESPACE and BOARDS_TARGET_SERVICE")
+        return 2
+
+    binary = "meshmedic"
+    state = State(tool_version(binary))
+    write_verdict(args.work, state)
+
+    stop = []
+    signal.signal(signal.SIGTERM, lambda *_: stop.append(True))
+    signal.signal(signal.SIGINT, lambda *_: stop.append(True))
+
+    events_path = os.path.join(args.work, "events.jsonl")
+    open(events_path, "a").close()
+    # The flag form is MeshMedic's documented first run, with its own
+    # defaults: the target an operator would watch and nothing else.
+    proc = subprocess.Popen([
+        binary, "watch",
+        "--prometheus", prometheus,
+        "--target", "namespace=%s,service=%s" % (ns, svc),
+        "--events", events_path,
+    ])
+
+    pending = ""
+    with open(events_path) as f:
+        while True:
+            chunk = f.read()
+            if chunk:
+                pending += chunk
+                *lines, pending = pending.split("\n")
+                for line in lines:
+                    if line.strip():
+                        state.add(json.loads(line))
+                write_verdict(args.work, state)
+            if stop or proc.poll() is not None:
+                break
+            time.sleep(1)
+
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        # Whatever MeshMedic wrote while stopping still counts.
+        pending += f.read()
+        for line in pending.split("\n"):
+            if line.strip():
+                state.add(json.loads(line))
+        write_verdict(args.work, state)
+
+    if not stop:
+        # MeshMedic exited before boards stopped it.
+        log("meshmedic watch exited with %s" % proc.returncode)
+        return proc.returncode or 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
