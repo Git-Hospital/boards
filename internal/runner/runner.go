@@ -30,6 +30,8 @@ type Config struct {
 	LiveTimeout time.Duration
 	// Poll is how often oracles are evaluated.
 	Poll time.Duration
+	// SkipSettle skips each case's settle time, for the dry-run testbed.
+	SkipSettle bool
 	// Work is the directory each run's verdict and raw output go into.
 	Work string
 	// Log receives progress lines. Nil discards them.
@@ -79,25 +81,27 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	}
 
 	if err := r.tb.Quiesce(ctx, r.cfg.Quiesce); err != nil {
-		run.Inconclusive = "testbed_failed"
+		run.Inconclusive = interrupted(ctx, "testbed_failed")
 		return run
 	}
 
-	// Reset runs on every exit path, including a failed inject, so a broken
-	// twin never leaves its defect behind for the next case.
+	// Cleanup must run even after Ctrl-C, so it never uses the run's ctx: a
+	// cancelled ctx would fail the reset at once and leave the defect, or an
+	// applied patch, in the cluster for the next run.
+	cleanup := context.WithoutCancel(ctx)
 	injected := false
 	defer func() {
 		if !injected {
 			return
 		}
-		if err := r.tb.Reset(context.WithoutCancel(ctx), c, twin); err != nil {
+		if run.DefectEndedAt.IsZero() {
+			run.DefectEndedAt = r.now()
+		}
+		if err := r.tb.Reset(cleanup, c, twin); err != nil {
 			r.cfg.Log("  reset failed: %v", err)
 			if run.Inconclusive == "" {
 				run.Inconclusive = "reset_failed"
 			}
-		}
-		if run.DefectEndedAt.IsZero() {
-			run.DefectEndedAt = r.now()
 		}
 	}()
 
@@ -123,22 +127,34 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	injected = true
 	if err := r.tb.Inject(ctx, c, twin); err != nil {
 		r.cfg.Log("  inject failed: %v", err)
-		run.Inconclusive = "testbed_failed"
+		run.Inconclusive = interrupted(ctx, "testbed_failed")
 		stopTool()
 		return run
 	}
 	run.InjectedAt = r.now()
 
+	// Settle lets the rate windows fill before the detection clock starts
+	// (the meaning meshmedic-prove gave it).
+	settle := c.Settle.Duration
+	if r.cfg.SkipSettle {
+		settle = 0
+	}
+	if err := sleep(ctx, settle); err != nil {
+		run.Inconclusive = "interrupted"
+		stopTool()
+		return run
+	}
 	if why := r.waitReady(ctx, c, twin); why != "" {
 		run.Inconclusive = why
 		stopTool()
 		return run
 	}
+	run.DetectFrom = r.now()
 
-	before, _ := r.tb.Inventory(ctx)
+	before, beforeErr := r.tb.Inventory(ctx)
 	var res toolResult
 	if watcher {
-		if err := sleepUntil(ctx, run.InjectedAt.Add(c.Window.Duration), r.now); err != nil {
+		if err := sleepUntil(ctx, run.DetectFrom.Add(c.Window.Duration), r.now); err != nil {
 			run.Inconclusive = "interrupted"
 			stopTool()
 			return run
@@ -146,31 +162,50 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	} else {
 		inv.Budget = c.Window.Duration
 		res = <-r.start(ctx, inv)
+		if ctx.Err() != nil {
+			// The user stopped boards; the tool did not time out.
+			run.Inconclusive = "interrupted"
+			return run
+		}
 	}
-	after, _ := r.tb.Inventory(ctx)
-	run.Cost.ObjectsCreated, run.Cost.ObjectsDeleted = diff(before, after)
+	after, afterErr := r.tb.Inventory(ctx)
+	if err := errors.Join(beforeErr, afterErr); err != nil {
+		run.Cost.InventoryError = err.Error()
+	} else {
+		run.Cost.ObjectsCreated, run.Cost.ObjectsDeleted = diff(before, after)
+	}
 
 	// The patch is read from the verdict as it stands at the end of the
-	// window; a watcher keeps its verdict.json current while it runs.
-	if twin == casefile.TwinDefect && c.Expect.Remediation != nil && r.tool.ProposesFixes {
-		if v, err := verdict.Read(filepath.Join(work, verdict.FileName)); err == nil && v.Patch != nil &&
-			!slices.Contains(c.Expect.Remediation.Forbid, v.Patch.Class) {
-			run.Remedy = r.remedy(ctx, c, v.Patch)
+	// window; a watcher keeps its verdict.json current while it runs. The
+	// score is about this patch, whatever the verdict says later.
+	if v, err := verdict.Read(filepath.Join(work, verdict.FileName)); err == nil {
+		run.Patch = v.Patch
+	}
+	if p := run.Patch; p != nil && twin == casefile.TwinDefect && c.Expect.Remediation != nil &&
+		r.tool.ProposesFixes && !slices.Contains(c.Expect.Remediation.Forbid, p.Class) {
+		run.Remedy = r.remedy(ctx, cleanup, c, p)
+		if run.Remedy.Healed {
+			run.DefectEndedAt = run.Remedy.HealedAt
 		}
 	}
 
-	if err := r.tb.Reset(ctx, c, twin); err != nil {
+	if run.DefectEndedAt.IsZero() {
+		run.DefectEndedAt = r.now()
+	}
+	injected = false
+	if err := r.tb.Reset(cleanup, c, twin); err != nil {
 		r.cfg.Log("  reset failed: %v", err)
 		run.Inconclusive = "reset_failed"
 	}
-	injected = false
-	run.DefectEndedAt = r.now()
 
 	if watcher {
 		// Let the tool see the recovery before stopping it.
 		_ = sleep(ctx, c.Expect.ResolvesWithin.Duration)
 		stopTool()
 		res = <-toolDone
+	}
+	if ctx.Err() != nil && run.Inconclusive == "" {
+		run.Inconclusive = "interrupted"
 	}
 
 	run.ExitCode, run.TimedOut = res.out.ExitCode, res.out.TimedOut
@@ -187,6 +222,15 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	run.Verdict = v
 	run.Cost.Tokens = v.Tokens
 	return run
+}
+
+// interrupted returns "interrupted" when the user stopped boards, so a
+// cancelled step is not reported as a broken testbed.
+func interrupted(ctx context.Context, otherwise string) string {
+	if ctx.Err() != nil {
+		return "interrupted"
+	}
+	return otherwise
 }
 
 type toolResult struct {
@@ -242,7 +286,7 @@ func (r *Runner) waitReady(ctx context.Context, c *casefile.Case, twin casefile.
 // defect's condition to stop holding AND every clean-twin check to hold with
 // traffic present: an oracle alone cannot tell a healed service from a
 // deleted one, since both stop reporting errors.
-func (r *Runner) remedy(ctx context.Context, c *casefile.Case, p *verdict.Patch) *score.Remedy {
+func (r *Runner) remedy(ctx, cleanup context.Context, c *casefile.Case, p *verdict.Patch) *score.Remedy {
 	m := &score.Remedy{}
 	if err := r.tb.ApplyPatch(ctx, c, p); err != nil {
 		m.Detail = err.Error()
@@ -253,7 +297,7 @@ func (r *Runner) remedy(ctx context.Context, c *casefile.Case, p *verdict.Patch)
 	for {
 		st, err := r.tb.Defect(ctx, c)
 		if err == nil && st != testbed.Holds {
-			m.Healed = true
+			m.Healed, m.HealedAt = true, r.now()
 			break
 		}
 		if !r.now().Before(deadline) || sleep(ctx, r.cfg.Poll) != nil {
@@ -271,7 +315,7 @@ func (r *Runner) remedy(ctx context.Context, c *casefile.Case, p *verdict.Patch)
 			}
 		}
 	}
-	if err := r.tb.RemovePatch(ctx, c, p); err != nil {
+	if err := r.tb.RemovePatch(cleanup, c, p); err != nil {
 		m.Detail = strings.TrimSpace(m.Detail + "; remove: " + err.Error())
 	} else {
 		m.Removed = true

@@ -53,6 +53,8 @@ func TestDetection(t *testing.T) {
 		"never":      {&verdict.Verdict{}, Fail},
 		"crashed":    {nil, Fail},
 		"before inj": {&verdict.Verdict{Alarmed: true, Events: alarmAt(-time.Minute)}, Fail},
+		// defect() ends the defect at 10m: an alarm after it is no detection.
+		"after the defect ended": {&verdict.Verdict{Alarmed: true, Events: alarmAt(11 * time.Minute)}, Fail},
 	} {
 		r := defect(tc.v, nil)
 		if got := detection(c, &r); got.Status != tc.want {
@@ -96,6 +98,8 @@ func TestRemediation(t *testing.T) {
 	patch := func(class string) *verdict.Verdict {
 		return &verdict.Verdict{Patch: &verdict.Patch{Class: class}}
 	}
+	// The scorer reads the patch boards applied (Run.Patch), which the
+	// runner copies from the verdict at the end of the window.
 	for name, tc := range map[string]struct {
 		v    *verdict.Verdict
 		m    *Remedy
@@ -110,6 +114,9 @@ func TestRemediation(t *testing.T) {
 		"crashed":                 {nil, nil, Fail},
 	} {
 		r := defect(tc.v, tc.m)
+		if tc.v != nil {
+			r.Patch = tc.v.Patch
+		}
 		if got := remediation(c, tool("one-shot"), &r); got.Status != tc.want {
 			t.Errorf("%s: %s (%s), want %s", name, got.Status, got.Reason, tc.want)
 		}
@@ -145,6 +152,36 @@ func TestResolves(t *testing.T) {
 		if got := resolves(c, tool(tc.mode), &r); got.Status != tc.want {
 			t.Errorf("%s: %s (%s), want %s", name, got.Status, got.Reason, tc.want)
 		}
+	}
+}
+
+// The detection clock starts when the defect is observable, after settle
+// and the oracle wait, so a slow oracle is not charged to the tool.
+func TestDetectionClockStartsWhenObservable(t *testing.T) {
+	c := meshCase()
+	r := defect(&verdict.Verdict{Alarmed: true, Events: alarmAt(4 * time.Minute)}, nil)
+	r.DetectFrom = t0.Add(3 * time.Minute)
+	if got := detection(c, &r); got.Status != Pass || *got.Value != 60 {
+		t.Errorf("%+v, want pass after 60s", got)
+	}
+	early := defect(&verdict.Verdict{Alarmed: true, Events: alarmAt(time.Second)}, nil)
+	early.DetectFrom = t0.Add(time.Minute)
+	if got := detection(c, &early); got.Status != Pass || *got.Value != 0 {
+		t.Errorf("an alarm before the clock started: %+v, want pass at 0", got)
+	}
+}
+
+// A tool that resolves when its own patch heals the defect resolved in
+// time, even though boards resets later.
+func TestResolveAfterHeal(t *testing.T) {
+	c := meshCase()
+	healedAt := t0.Add(6 * time.Minute)
+	r := defect(&verdict.Verdict{Alarmed: true, Events: []verdict.Event{
+		{At: t0.Add(time.Minute), Type: "alarm"},
+		{At: healedAt.Add(30 * time.Second), Type: "resolve"},
+	}}, &Remedy{Applied: true, Healed: true, HealedAt: healedAt})
+	if got := resolves(c, tool("watcher"), &r); got.Status != Pass {
+		t.Errorf("%s (%s), want pass", got.Status, got.Reason)
 	}
 }
 
@@ -187,6 +224,16 @@ func TestContamination(t *testing.T) {
 	}
 }
 
+func TestOmittedNullIsNotHonest(t *testing.T) {
+	c := &casefile.Case{ID: "code/x", Track: casefile.TrackCode, Kind: casefile.KindFault, Expect: casefile.Expect{
+		Values: map[string]*casefile.Value{"coverage": nil},
+	}}
+	run := Run{Twin: casefile.TwinFixture, Verdict: &verdict.Verdict{Measurements: map[string]*float64{}}}
+	if got := Score(c, tool("one-shot"), []Run{run}).Axes[NullHonesty]; got.Status != Fail {
+		t.Errorf("an empty answer scored %s on null honesty, want fail", got.Status)
+	}
+}
+
 func TestCodeMetrics(t *testing.T) {
 	f := func(x float64) *float64 { return &x }
 	c := &casefile.Case{ID: "code/x", Track: casefile.TrackCode, Kind: casefile.KindFault, Expect: casefile.Expect{
@@ -194,6 +241,8 @@ func TestCodeMetrics(t *testing.T) {
 			"cyclomatic": {Expected: 7, Tolerance: 0},
 			"coverage":   nil, // no coverage report: the honest answer is null
 			"truck":      {Expected: 2, Tolerance: 0},
+			"churn":      nil,
+			"modules":    {Expected: 4, Tolerance: 0},
 		},
 	}}
 	run := Run{Twin: casefile.TwinFixture, Verdict: &verdict.Verdict{Measurements: map[string]*float64{
@@ -206,7 +255,8 @@ func TestCodeMetrics(t *testing.T) {
 	for _, m := range got.Metrics {
 		results[m.ID] = m.Result
 	}
-	want := map[string]string{"cyclomatic": "fail", "coverage": "fabricated", "truck": "abstained"}
+	// churn and modules are left out of the verdict: no answer, not honesty.
+	want := map[string]string{"cyclomatic": "fail", "coverage": "fabricated", "truck": "abstained", "churn": "missing", "modules": "missing"}
 	for id, w := range want {
 		if results[id] != w {
 			t.Errorf("%s: %s, want %s", id, results[id], w)

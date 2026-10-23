@@ -89,6 +89,14 @@ func TestValidateRejects(t *testing.T) {
 			strings.Replace(valid, "[kubectl, -n, demo, set, env, deploy/x, A=1]", "[env, KUBECONFIG=/home/me/.kube/config, kubectl, get, ns]", 1),
 			"selects a cluster",
 		},
+		"helm kube-context": {
+			strings.Replace(valid, "[kubectl, -n, demo, set, env, deploy/x, A=1]", "[helm, upgrade, x, ./chart, --kube-context, prod]", 1),
+			"selects a cluster",
+		},
+		"kubectl cluster": {
+			strings.Replace(valid, "[kubectl, -n, demo, set, env, deploy/x, A=1]", "[kubectl, --cluster=prod, apply, -f, x.yaml]", 1),
+			"selects a cluster",
+		},
 		"unwinnable window": {
 			strings.Replace(valid, "window: 5m", "window: 1m", 1),
 			"no tool could pass",

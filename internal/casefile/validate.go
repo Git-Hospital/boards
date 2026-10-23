@@ -186,15 +186,21 @@ func oracleCommands(o Oracle) [][]string {
 // cluster other than the one boards supplies, or "". This is a lint: the
 // private kubeconfig is the enforcement, and a script can hide anything.
 func clusterOverride(argv []string) string {
+	// kubectl's and helm's spellings: helm has --kube-context and
+	// --kube-apiserver where kubectl has --context and --server.
+	flags := []string{"--context", "--kubeconfig", "--server", "--cluster", "--kube-context", "--kube-apiserver"}
 	for i, a := range argv {
+		for _, f := range flags {
+			if a == f || strings.HasPrefix(a, f+"=") {
+				return a
+			}
+		}
 		switch {
-		case a == "--context", a == "--kubeconfig", a == "--server", a == "-s" && i > 0 && argv[0] == "kubectl":
-			return a
-		case strings.HasPrefix(a, "--context="), strings.HasPrefix(a, "--kubeconfig="), strings.HasPrefix(a, "--server="):
+		case a == "-s" && i > 0 && argv[0] == "kubectl":
 			return a
 		case strings.Contains(a, "KUBECONFIG="):
 			return a
-		case a == "use-context", a == "set-context":
+		case a == "use-context", a == "set-context", a == "set-cluster":
 			return a
 		}
 	}

@@ -64,20 +64,33 @@ type Run struct {
 	ExitCode   int              `json:"exitCode"`
 	TimedOut   bool             `json:"timedOut,omitempty"`
 
-	InjectedAt    time.Time `json:"injectedAt"`
+	InjectedAt time.Time `json:"injectedAt"`
+	// DetectFrom starts the detection clock: the defect was injected, the
+	// case's settle time passed and its oracle saw it. An alarm raised
+	// earlier counts as immediate.
+	DetectFrom time.Time `json:"detectFrom"`
+	// DefectEndedAt is when the defect stopped: the patch healed it, or
+	// boards began the reset. An alarm after it is not a detection.
 	DefectEndedAt time.Time `json:"defectEndedAt"`
 
-	Remedy *Remedy `json:"remedy,omitempty"`
-	Cost   Cost    `json:"cost"`
+	// Patch is the patch boards acted on, read from the verdict at the end
+	// of the window. A watcher may rewrite its verdict afterwards; the score
+	// must be about the patch that was applied.
+	Patch  *verdict.Patch `json:"patch,omitempty"`
+	Remedy *Remedy        `json:"remedy,omitempty"`
+	Cost   Cost           `json:"cost"`
 }
 
 // Remedy is what happened when boards applied the tool's patch (D12).
 type Remedy struct {
-	Applied bool   `json:"applied"`
-	Healed  bool   `json:"healed"`
-	CleanOK bool   `json:"cleanOk"`
-	Removed bool   `json:"removed"`
-	Detail  string `json:"detail,omitempty"`
+	Applied bool `json:"applied"`
+	Healed  bool `json:"healed"`
+	// HealedAt is when the defect's condition stopped holding after the
+	// patch, the earliest moment a tool could rightly resolve.
+	HealedAt time.Time `json:"healedAt,omitempty"`
+	CleanOK  bool      `json:"cleanOk"`
+	Removed  bool      `json:"removed"`
+	Detail   string    `json:"detail,omitempty"`
 }
 
 // Cost is what the run cost, measured by boards.
@@ -85,7 +98,10 @@ type Cost struct {
 	WallSeconds    float64  `json:"wallSeconds"`
 	ObjectsCreated []string `json:"objectsCreated"`
 	ObjectsDeleted []string `json:"objectsDeleted"`
-	Tokens         *int     `json:"tokens"`
+	// InventoryError is set when the cluster could not be listed, in which
+	// case the object lists are empty and mean nothing.
+	InventoryError string `json:"inventoryError,omitempty"`
+	Tokens         *int   `json:"tokens"`
 }
 
 // crashed returns why a tool produced no usable answer, or "".
@@ -106,8 +122,9 @@ type Metric struct {
 	Reported *float64 `json:"reported"`
 	AbsError *float64 `json:"absError,omitempty"`
 	RelError *float64 `json:"relError,omitempty"`
-	// Result is pass, fail, fabricated (a number where the answer is null)
-	// or abstained (null where a number was expected).
+	// Result is pass, fail, fabricated (a number where the answer is null),
+	// abstained (null where a number was expected) or missing (the tool left
+	// the key out, which is no answer).
 	Result string `json:"result"`
 }
 
@@ -179,10 +196,15 @@ func detection(c *casefile.Case, r *Run) Axis {
 		return fail(why)
 	}
 	at, ok := r.Verdict.FirstAlarm(r.InjectedAt)
-	if !ok {
+	if !ok || (!r.DefectEndedAt.IsZero() && at.After(r.DefectEndedAt)) {
+		// An alarm raised once the defect was gone is not a detection.
 		return fail("no_alarm")
 	}
-	after := at.Sub(r.InjectedAt)
+	from := r.DetectFrom
+	if from.IsZero() {
+		from = r.InjectedAt
+	}
+	after := max(at.Sub(from), 0)
 	if after <= c.Expect.AlarmWithin.Duration {
 		return pass(secs(after))
 	}
@@ -230,7 +252,7 @@ func remediation(c *casefile.Case, a *adapter.Adapter, r *Run) Axis {
 	if why := r.crashed(); why != "" {
 		return fail(why)
 	}
-	p := r.Verdict.Patch
+	p := r.Patch
 	if p == nil {
 		if exp.NoPatch == "pass" {
 			return pass(nil)
@@ -263,17 +285,24 @@ func resolves(c *casefile.Case, a *adapter.Adapter, r *Run) Axis {
 	if why := r.crashed(); why != "" {
 		return fail(why)
 	}
-	if _, ok := r.Verdict.FirstAlarm(r.InjectedAt); !ok {
+	alarm, ok := r.Verdict.FirstAlarm(r.InjectedAt)
+	if !ok || (!r.DefectEndedAt.IsZero() && alarm.After(r.DefectEndedAt)) {
 		return null("no_alarm")
 	}
-	if r.DefectEndedAt.IsZero() {
+	// The defect was first gone when the tool's patch healed it, or else
+	// when boards began the reset.
+	gone := r.DefectEndedAt
+	if r.Remedy != nil && !r.Remedy.HealedAt.IsZero() {
+		gone = r.Remedy.HealedAt
+	}
+	if gone.IsZero() {
 		return null("not_measured")
 	}
-	at, ok := r.Verdict.FirstResolve(r.DefectEndedAt)
+	at, ok := r.Verdict.FirstResolve(gone)
 	if !ok {
 		return fail("never_resolved")
 	}
-	after := at.Sub(r.DefectEndedAt)
+	after := at.Sub(gone)
 	if after > c.Expect.ResolvesWithin.Duration {
 		return withValue(fail("resolved_after_deadline"), secs(after))
 	}
@@ -297,7 +326,7 @@ func controlRemediation(a *adapter.Adapter, r *Run) Axis {
 	if why := r.crashed(); why != "" {
 		return fail(why)
 	}
-	if r.Verdict.Patch != nil {
+	if r.Patch != nil {
 		return fail("patched_a_healthy_service")
 	}
 	return pass(nil)
@@ -313,19 +342,26 @@ func metrics(c *casefile.Case, r *Run) []Metric {
 	for _, id := range ids {
 		exp := c.Expect.Values[id]
 		var rep *float64
+		answered := false
 		if r.Verdict != nil {
-			rep = r.Verdict.Measurements[id]
+			rep, answered = r.Verdict.Measurements[id]
 		}
 		m := Metric{ID: id, Reported: rep}
+		if exp != nil {
+			m.Expected = num(exp.Expected)
+		}
 		switch {
+		case !answered:
+			// Only an explicit null means "could not measure". A key left
+			// out is no answer at all, and counts against the tool.
+			m.Result = "missing"
 		case exp == nil && rep == nil:
 			m.Result = "pass"
 		case exp == nil:
 			m.Result = "fabricated"
 		case rep == nil:
-			m.Expected, m.Result = num(exp.Expected), "abstained"
+			m.Result = "abstained"
 		default:
-			m.Expected = num(exp.Expected)
 			abs := math.Abs(*rep - exp.Expected)
 			m.AbsError = num(abs)
 			if exp.Expected != 0 {
@@ -353,8 +389,10 @@ func accuracy(ms []Metric, r *Run) (acc, honesty Axis) {
 		switch {
 		case m.Expected == nil && m.Result == "pass":
 			honest++
-		case m.Result == "fabricated":
+		case m.Result == "fabricated", m.Result == "missing" && m.Expected == nil:
 			fabricated++
+		case m.Result == "missing":
+			failed++
 		case m.Result == "pass":
 			passed++
 		case m.Result == "fail":
@@ -364,7 +402,7 @@ func accuracy(ms []Metric, r *Run) (acc, honesty Axis) {
 	acc = ratio(passed, failed, "all_abstained")
 	honesty = ratio(honest, fabricated, "no_null_expected")
 	if honesty.Status == Fail || honesty.Status == Partial {
-		honesty.Reason = "fabricated"
+		honesty.Reason = "fabricated_or_missing"
 	}
 	return acc, honesty
 }

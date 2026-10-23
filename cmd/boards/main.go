@@ -270,8 +270,9 @@ func cmdRun(args []string) int {
 	tb := testbed.NewFake(execx.BaseEnv(absHome))
 	absWork, _ := filepath.Abs(filepath.Join(outDir, "work"))
 	rn := runner.New(runner.Config{
-		Work: absWork,
-		Log:  func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) },
+		Work:       absWork,
+		SkipSettle: true, // the dry-run testbed has no signals to settle
+		Log:        func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) },
 	}, tb, tool)
 
 	started := time.Now()
