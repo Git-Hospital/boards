@@ -152,9 +152,9 @@ alarm: "an incident report with a firing scenario"     # what counts as an alarm
 culprits: "the workload labels in the report's evidence"
 ```
 
-The runner calls `run --case-id <id> --twin <twin> --work <dir> --window <duration>`. A dummy adapter gets `--case <dir>` instead, because answering from the case file is its job. A real tool never gets the case directory: it holds the expected culprits, the reference fix and the rubric. The runner provides the following, and nothing else from the user's environment:
+The runner calls `run --work <dir> --window <duration>`. A real tool gets nothing that names the case: not the case directory (it holds the expected culprits, the reference fix and the rubric), not the case id (it names the defect) and not the twin (it says whether there is a defect). Only a dummy adapter also gets `--case <dir> --twin <twin>`, because answering from the case file is its job. The work directory is a fresh temporary directory named after nothing, and HOME is a fresh one beside it, so a tool cannot read its siblings or carry state from one twin to the next; the regular files it leaves are copied to the report afterwards. The runner provides the following, and nothing else from the user's environment:
 - `KUBECONFIG`, set to the private kubeconfig, which contains only the cluster boards created;
-- `HOME`, set to a scratch directory, so a bare `kubectl` cannot fall back to `~/.kube/config`;
+- `HOME`, set to that run's own empty directory, so a bare `kubectl` cannot fall back to `~/.kube/config`;
 - `BOARDS_PROMETHEUS`;
 - the case's `target`, as `BOARDS_TARGET_*`. The target is the scope an operator would point the tool at (namespace and service, chart, repository). It never names a culprit, and validation rejects a case whose culprit is its target;
 - the secrets the adapter declares.
