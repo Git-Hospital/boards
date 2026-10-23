@@ -97,6 +97,10 @@ func TestValidateRejects(t *testing.T) {
 			strings.Replace(valid, "[kubectl, -n, demo, set, env, deploy/x, A=1]", "[kubectl, --cluster=prod, apply, -f, x.yaml]", 1),
 			"selects a cluster",
 		},
+		"target as culprit": {
+			strings.Replace(strings.Replace(valid, "title: sample", "title: sample\ntarget: {namespace: demo, service: x}", 1), "{kind: Deployment, name: x}", "{kind: Service, namespace: demo, name: x}", 1),
+			"is the target every tool is given",
+		},
 		"unwinnable window": {
 			strings.Replace(valid, "window: 5m", "window: 1m", 1),
 			"no tool could pass",

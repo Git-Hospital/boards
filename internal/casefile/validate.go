@@ -43,6 +43,18 @@ func Validate(c *Case) error {
 		}
 	}
 
+	// Every tool is given the target, so a culprit that is the target
+	// would score a tool that only echoes what it was told.
+	if t := c.Target; t.Service != "" {
+		for _, g := range c.Expect.Culprits {
+			for _, e := range g.All {
+				if strings.EqualFold(e.Kind, "Service") && e.Name == t.Service && (e.Namespace == "" || e.Namespace == t.Namespace) {
+					add("culprit %s is the target every tool is given; naming it proves nothing", e)
+				}
+			}
+		}
+	}
+
 	if c.Rubric != "" {
 		if _, err := os.Stat(filepath.Join(c.Dir, c.Rubric)); err != nil {
 			add("rubric %s: %v", c.Rubric, err)

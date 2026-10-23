@@ -55,8 +55,6 @@ expect:
   culprits:
     - level: 2
       all: [{kind: VirtualService, namespace: demo, name: payments}]
-    - level: 1
-      all: [{kind: Service, namespace: demo, name: payments}]
   quiet:
     - {kind: Deployment, namespace: demo, name: payments-v1}
     - {kind: Deployment, namespace: demo, name: payments-v2}

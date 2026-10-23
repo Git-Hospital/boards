@@ -147,9 +147,16 @@ func (a *Adapter) Run(ctx context.Context, inv Invocation) (Outcome, error) {
 		part = strings.ReplaceAll(part, "{{dir}}", a.Dir)
 		argv = append(argv, part)
 	}
+	// Only a dummy gets the case directory: it holds the expected culprits,
+	// the reference fix and the rubric. A real tool gets the case id, the
+	// target and the cluster, as an operator would.
+	caseArg := []string{"--case-id", inv.Case.ID}
+	if a.Category == "dummy" {
+		caseArg = []string{"--case", inv.Case.Dir}
+	}
+	argv = append(argv, "run")
+	argv = append(argv, caseArg...)
 	argv = append(argv,
-		"run",
-		"--case", inv.Case.Dir,
 		"--twin", string(inv.Twin),
 		"--work", inv.Work,
 		"--window", inv.Window.String(),
@@ -160,7 +167,6 @@ func (a *Adapter) Run(ctx context.Context, inv Invocation) (Outcome, error) {
 	env = append(env,
 		"BOARDS_TARGET_NAMESPACE="+t.Namespace,
 		"BOARDS_TARGET_SERVICE="+t.Service,
-		"BOARDS_TARGET_WORKLOAD="+t.Workload,
 		"BOARDS_TARGET_CHART="+t.Chart,
 		"BOARDS_TARGET_REPO="+t.Repo,
 	)

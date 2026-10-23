@@ -9,7 +9,7 @@ provenance:
 author: kassvl
 authorRelation: [meshmedic]
 contaminatedFor: [meshmedic]
-target: {namespace: demo, service: payments, workload: loadgen}
+target: {namespace: demo, service: payments}
 inject:
   - desc: roll loadgen with port 9091, which payments does not expose
     run:

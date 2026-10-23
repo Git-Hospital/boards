@@ -9,7 +9,7 @@ provenance:
 author: kassvl
 authorRelation: [meshmedic]
 contaminatedFor: [meshmedic]
-target: {namespace: demo, service: payments, workload: loadgen}
+target: {namespace: demo, service: payments}
 inject:
   - desc: roll loadgen with https for a plain-HTTP backend
     run:

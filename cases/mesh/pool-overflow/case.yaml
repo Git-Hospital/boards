@@ -56,8 +56,6 @@ expect:
   culprits:
     - level: 2
       all: [{kind: DestinationRule, namespace: demo, name: payments}]
-    - level: 1
-      all: [{kind: Service, namespace: demo, name: payments}]
   remediation:
     accept: [pool-resize]
     noPatch: fail

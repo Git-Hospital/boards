@@ -310,7 +310,7 @@ func (k *Kind) Info() Info {
 
 // Env implements Testbed: what adapters and case steps get.
 func (k *Kind) Env() []string {
-	return append(k.clusterEnv(), "BOARDS_PROMETHEUS_URL="+k.promURL)
+	return append(k.clusterEnv(), "BOARDS_PROMETHEUS="+k.promURL)
 }
 
 // clusterEnv points kubectl, istioctl and helm at the private kubeconfig
