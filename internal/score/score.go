@@ -77,9 +77,12 @@ type Run struct {
 	// Patch is the patch boards acted on, read from the verdict at the end
 	// of the window. A watcher may rewrite its verdict afterwards; the score
 	// must be about the patch that was applied.
-	Patch  *verdict.Patch `json:"patch,omitempty"`
-	Remedy *Remedy        `json:"remedy,omitempty"`
-	Cost   Cost           `json:"cost"`
+	Patch *verdict.Patch `json:"patch,omitempty"`
+	// Dirty says the twin left the testbed in an unknown state, so the run
+	// stopped after this case. It does not change this case's score.
+	Dirty  string  `json:"dirty,omitempty"`
+	Remedy *Remedy `json:"remedy,omitempty"`
+	Cost   Cost    `json:"cost"`
 }
 
 // Remedy is what happened when boards applied the tool's patch (D12).

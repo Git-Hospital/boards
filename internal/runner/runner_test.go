@@ -131,14 +131,50 @@ func (stuckPatch) RemovePatch(context.Context, *casefile.Case, *verdict.Patch) e
 	return errors.New("conflict")
 }
 
-// A patch left in the cluster makes the case inconclusive, and the run
-// must stop: later cases would not run on the testbed.
+// A patch left in the cluster stops the run, since later cases would not
+// run on the testbed, but the case itself is still scored.
 func TestUnremovedPatchIsDirty(t *testing.T) {
 	tb := stuckPatch{testbed.NewFake(execx.BaseEnv(t.TempDir()))}
 	a := tool(t, "one-shot", "echo '"+verdictWithPatch+"' > verdict.json\n")
 	c := testCase(time.Minute, time.Minute)
 	got := newRunner(t, tb, a).Case(context.Background(), c)
-	if got.Runs[0].Inconclusive != DirtyPatch || !Dirty(got) {
-		t.Errorf("inconclusive %q, dirty %v", got.Runs[0].Inconclusive, Dirty(got))
+	if got.Runs[0].Dirty != DirtyPatch || !Dirty(got) || got.Inconclusive != "" {
+		t.Errorf("dirty %q %v, inconclusive %q", got.Runs[0].Dirty, Dirty(got), got.Inconclusive)
+	}
+	// The tool's irreversible patch is its own failure, not a lost case.
+	if ax := got.Axes[score.Remediation]; ax.Status != score.Fail || ax.Reason != "not_removable" {
+		t.Errorf("remediation %s (%s), want fail not_removable", ax.Status, ax.Reason)
+	}
+}
+
+// halfPatch fails to apply part way and cannot be removed either.
+type halfPatch struct{ stuckPatch }
+
+func (halfPatch) ApplyPatch(context.Context, *casefile.Case, *verdict.Patch) error {
+	return errors.New("second document rejected")
+}
+
+func TestHalfAppliedPatchIsDirty(t *testing.T) {
+	tb := halfPatch{stuckPatch{testbed.NewFake(execx.BaseEnv(t.TempDir()))}}
+	a := tool(t, "one-shot", "echo '"+verdictWithPatch+"' > verdict.json\n")
+	if got := newRunner(t, tb, a).Case(context.Background(), testCase(time.Minute, time.Minute)); !Dirty(got) {
+		t.Error("a half-applied patch that could not be removed left the run clean")
+	}
+}
+
+// brokenService is a testbed where every patch removes the symptom and
+// breaks the service: the clean-twin checks never hold afterwards.
+type brokenService struct{ *testbed.Fake }
+
+func (b brokenService) Check(ctx context.Context, c *casefile.Case, o casefile.Oracle) (testbed.State, error) {
+	return testbed.Absent, nil
+}
+
+func TestPatchThatBreaksTheServiceIsNotHealed(t *testing.T) {
+	tb := brokenService{testbed.NewFake(execx.BaseEnv(t.TempDir()))}
+	a := tool(t, "one-shot", "echo '"+verdictWithPatch+"' > verdict.json\n")
+	got := newRunner(t, tb, a).Case(context.Background(), testCase(time.Minute, time.Minute))
+	if ax := got.Axes[score.Remediation]; ax.Status != score.Fail || ax.Reason != "broke_clean_twin" {
+		t.Errorf("remediation %s (%s), want fail broke_clean_twin", ax.Status, ax.Reason)
 	}
 }

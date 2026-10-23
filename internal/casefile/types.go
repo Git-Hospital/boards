@@ -266,7 +266,6 @@ const (
 	TwinFixture Twin = "fixture"
 )
 
-// Twins returns the runs a case needs, in order.
 // Steps returns the inject and reset steps of one twin. The clean twin's
 // may be empty: it then runs on the untouched testbed.
 func (c *Case) Steps(twin Twin) (inject, reset []Step) {
@@ -282,6 +281,7 @@ func (c *Case) Steps(twin Twin) (inject, reset []Step) {
 	return c.Inject, c.Reset
 }
 
+// Twins returns the runs a case needs, in order.
 func (c *Case) Twins() []Twin {
 	switch {
 	case c.Kind == KindControl:

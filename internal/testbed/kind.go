@@ -77,6 +77,11 @@ func StartKind(ctx context.Context, opts KindOptions) (*Kind, error) {
 	if !strings.HasPrefix(opts.Name, ClusterPrefix) {
 		return nil, fmt.Errorf("testbed: cluster name %q must start with %q", opts.Name, ClusterPrefix)
 	}
+	for _, name := range meshManifests {
+		if _, err := opts.Lock.File(name); err != nil {
+			return nil, fmt.Errorf("testbed: %w", err)
+		}
+	}
 	k := &Kind{
 		opts:       opts,
 		kubeconfig: filepath.Join(opts.Dir, "kubeconfig"),
@@ -131,12 +136,16 @@ func (k *Kind) create(ctx context.Context) error {
 		return fmt.Errorf("testbed: a cluster named %s already exists; pass --reuse to use it, or delete it", k.opts.Name)
 	}
 	k.opts.Log("testbed: creating kind cluster %s", k.opts.Name)
-	k.created = true
-	if _, err := k.host(ctx, 10*time.Minute, "kind", "create", "cluster",
+	_, err = k.host(ctx, 10*time.Minute, "kind", "create", "cluster",
 		"--name", k.opts.Name, "--image", k.opts.Lock.Kind.NodeImage,
-		"--kubeconfig", k.kubeconfig, "--wait", "180s"); err != nil {
+		"--kubeconfig", k.kubeconfig, "--wait", "180s")
+	// kind removes a cluster it failed to create, except when it failed
+	// because the name was taken, and then the cluster is someone else's.
+	// So Close deletes only a cluster this run saw come up.
+	if err != nil {
 		return err
 	}
+	k.created = true
 	_, err = k.cluster(ctx, time.Minute, "", "sh", "-c",
 		fmt.Sprintf("kubectl -n %s create configmap %s --from-literal=lock=%s && kubectl -n %s label configmap %s %s",
 			markerNamespace, markerName, k.opts.Lock.Digest, markerNamespace, markerName, markerLabel))
@@ -186,16 +195,22 @@ func readMarker(js string) (lock string, ok bool) {
 	return cm.Data["lock"], true
 }
 
+// meshManifests are the manifests the mesh testbed applies; a lock must
+// name every one.
+var meshManifests = []string{"gatewayAPI", "prometheus", "kubeStateMetrics", "payments", "ledger", "ingress", "sidecarOrders"}
+
 // provision installs the mesh testbed, in the order meshmedic's demo
 // scripts used (D19).
 func (k *Kind) provision(ctx context.Context) error {
-	file := func(name string) string {
+	files := map[string]string{}
+	for _, name := range meshManifests {
 		p, err := k.opts.Lock.File(name)
 		if err != nil {
-			panic(err) // LoadLock checked the files; a missing name is a bug here
+			return err
 		}
-		return p
+		files[name] = p
 	}
+	file := func(name string) string { return files[name] }
 	steps := []struct {
 		desc    string
 		timeout time.Duration

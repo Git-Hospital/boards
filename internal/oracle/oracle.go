@@ -124,19 +124,23 @@ func (e *Evaluator) logs(ctx context.Context, o *casefile.LogsOracle, dir string
 }
 
 // exec runs a command in a pod. kubectl passes the command's exit code
-// through, so a failure of kubectl itself (no such pod) is told apart by its
-// "Error from server" message and reported as an error, not as the
-// command failing.
+// through and then prints "command terminated with exit code N"; a
+// non-zero exit without that line is kubectl itself failing (no such pod),
+// which is an error, not an answer. So is kubectl timing out: a hung exec
+// stream says nothing about the command.
 func (e *Evaluator) exec(ctx context.Context, o *casefile.ExecOracle, dir string) (State, error) {
 	argv := append([]string{"kubectl", "-n", o.Namespace, "exec", o.Pod, "--"}, o.Command...)
 	res, err := e.run(ctx, argv, dir)
 	if err != nil {
 		return "", err
 	}
-	if strings.Contains(res.Stderr, "Error from server") || strings.Contains(res.Stderr, "error: ") {
+	if res.TimedOut {
+		return "", fmt.Errorf("oracle exec: kubectl timed out or was stopped")
+	}
+	if res.ExitCode != 0 && !strings.Contains(res.Stderr, "command terminated with exit code") {
 		return "", fmt.Errorf("oracle exec: %s", firstLine(res.Stderr))
 	}
-	succeeded := res.ExitCode == 0 && !res.TimedOut
+	succeeded := res.ExitCode == 0
 	if succeeded == (o.HoldsWhen == "succeeds") {
 		return Holds, nil
 	}

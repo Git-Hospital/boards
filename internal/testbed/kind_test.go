@@ -13,7 +13,7 @@ func TestRepositoryLockIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"gatewayAPI", "prometheus", "kubeStateMetrics", "payments", "ledger", "ingress", "sidecarOrders"} {
+	for _, name := range meshManifests {
 		if _, err := l.File(name); err != nil {
 			t.Error(err)
 		}
@@ -39,6 +39,18 @@ manifests:
 		t.Fatal(err)
 	}
 	if _, err := LoadLock(path); err == nil || !strings.Contains(err.Error(), "update the lock") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestKindRefusesALockMissingAManifest(t *testing.T) {
+	l, err := LoadLock("../../testbed/testbed.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(l.Manifests, "sidecarOrders")
+	_, err = StartKind(context.Background(), KindOptions{Lock: l, Name: ClusterPrefix + "x", Dir: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "sidecarOrders") {
 		t.Errorf("got %v", err)
 	}
 }

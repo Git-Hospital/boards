@@ -87,10 +87,11 @@ func TestExec(t *testing.T) {
 		want    State
 		wantErr bool
 	}{
-		"command failed":    {execx.Result{ExitCode: 56}, Holds, false},
-		"command succeeded": {execx.Result{}, Absent, false},
-		"kubectl failed":    {execx.Result{ExitCode: 1, Stderr: `Error from server (NotFound): pods "c" not found`}, "", true},
-		"command timed out": {execx.Result{TimedOut: true}, Holds, false},
+		"command failed":        {execx.Result{ExitCode: 56, Stderr: "command terminated with exit code 56"}, Holds, false},
+		"command failed loudly": {execx.Result{ExitCode: 7, Stderr: "error: connection refused\ncommand terminated with exit code 7"}, Holds, false},
+		"command succeeded":     {execx.Result{}, Absent, false},
+		"kubectl failed":        {execx.Result{ExitCode: 1, Stderr: `Error from server (NotFound): pods "c" not found`}, "", true},
+		"kubectl timed out":     {execx.Result{TimedOut: true}, "", true},
 	} {
 		e := &Evaluator{Run: fakeRun(map[string]execx.Result{"kubectl -n default exec c -- curl x": tc.res})}
 		got, err := e.Eval(context.Background(), o, "")
