@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -59,7 +60,15 @@ func answer(kind string, c *casefile.Case, twin casefile.Twin, now time.Time) (*
 		case casefile.TwinDefect:
 			alarm()
 			v.Culprits = bestCulprits(c)
-			if r := c.Expect.Remediation; r != nil && len(r.Accept) > 0 {
+			if r := c.Expect.Remediation; r != nil && r.Reference != nil {
+				content, err := os.ReadFile(filepath.Join(c.Dir, r.Reference.File))
+				if err != nil {
+					return nil, err
+				}
+				v.Patch = &verdict.Patch{Class: r.Reference.Class, Format: "kubernetes-yaml", Content: string(content)}
+			} else if r != nil && len(r.Accept) > 0 {
+				// No known fix: right class, no content. It scores on the
+				// dry-run testbed only.
 				v.Patch = &verdict.Patch{Class: r.Accept[0], Format: "kubernetes-yaml"}
 			}
 		case casefile.TwinFixture:

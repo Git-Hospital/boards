@@ -1,0 +1,43 @@
+# The one pinned testbed (D18). A run on anything else (another Istio, a
+# reused cluster, a changed manifest) is marked standard: false and never
+# enters the official table.
+#
+# Istio stays at 1.24.1, the version the 16 meshmedic-prove proofs and the
+# 11 scenarios were measured on, until parity with them is shown (D25). It
+# is past end of life; moving to a supported Istio is its own PR after that.
+schemaVersion: boards.testbed/v1
+
+kind:
+  version: v0.31.0
+  nodeImage: kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
+
+istio:
+  version: 1.24.1
+  profile: ambient
+
+# Every file applied to the cluster, with its SHA-256. Vendored files are
+# upstream's, unmodified; app files are ours.
+manifests:
+  gatewayAPI:
+    path: mesh/vendor/gateway-api-v1.2.1-standard-install.yaml
+    source: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
+    sha256: 97598bf6ab3b33b9b5c5432bdd24de091e4e9c3aa0575ebb0710a2a19cd64d64
+  prometheus:
+    path: mesh/vendor/istio-1.24.1-prometheus.yaml
+    source: https://raw.githubusercontent.com/istio/istio/1.24.1/samples/addons/prometheus.yaml
+    sha256: b8942a843d65308b9b1c8826064a587ba047f06c62a3e21a3b5f8690c26a75fd
+  kubeStateMetrics:
+    path: mesh/app/kube-state-metrics.yaml
+    sha256: cea019eb86d55ba745a62be8509914acbf3daf496c900c8cc3576c9daf0d0dde
+  payments:
+    path: mesh/app/payments.yaml
+    sha256: 2d520feca8e459f8c8db15a445a334767b4cf3e20866fa22f489acb6ac4f15bf
+  ledger:
+    path: mesh/app/ledger.yaml
+    sha256: f614fb72792c67957c94ed013b27d5b12b1493e860b2bdd366976a87a9d11e34
+  ingress:
+    path: mesh/app/ingress.yaml
+    sha256: 03273a3caad15780696e1b5ee3b2d4d5d70fabb3731558e57d677dc50f63dfda
+  sidecarOrders:
+    path: mesh/app/sidecar-orders.yaml
+    sha256: e9832f363c646d6cb99d8d70f752d0f7957231dc77d02f791223a89e5cb673bb

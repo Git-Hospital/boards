@@ -74,4 +74,5 @@ expect:
     accept: [enroll-client, scoped-permissive]
     noPatch: fail
     healsWithin: 5m
+    reference: {class: enroll-client, file: fix-enroll-client.yaml}
 rubric: ground-truth.md

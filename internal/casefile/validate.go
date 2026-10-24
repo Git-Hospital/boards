@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -128,6 +129,14 @@ func validateRemediation(c *Case, add func(string, ...any)) {
 	// remediation expectation needs a heal deadline and clean-twin checks.
 	if r.HealsWithin.Duration <= 0 {
 		add("expect.remediation.healsWithin must be set")
+	}
+	if ref := r.Reference; ref != nil {
+		if !slices.Contains(r.Accept, ref.Class) {
+			add("remediation.reference class %q is not an accepted class", ref.Class)
+		}
+		if _, err := os.Stat(filepath.Join(c.Dir, ref.File)); err != nil {
+			add("remediation.reference: %v", err)
+		}
 	}
 	if c.CleanTwin == nil || len(c.CleanTwin.Checks) == 0 {
 		add("cleanTwin.checks are required with a remediation expectation, so a patch that heals by removing the service fails (D12)")

@@ -87,7 +87,16 @@
             "accept": {"type": "array", "items": {"$ref": "#/$defs/patchClass"}},
             "forbid": {"type": "array", "items": {"$ref": "#/$defs/patchClass"}},
             "noPatch": {"enum": ["pass", "fail"]},
-            "healsWithin": {"$ref": "#/$defs/duration"}
+            "healsWithin": {"$ref": "#/$defs/duration"},
+            "reference": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["class", "file"],
+              "properties": {
+                "class": {"$ref": "#/$defs/patchClass"},
+                "file": {"type": "string", "minLength": 1}
+              }
+            }
           }
         },
         "values": {

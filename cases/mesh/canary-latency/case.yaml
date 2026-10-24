@@ -48,4 +48,5 @@ expect:
     accept: [traffic-shift, rollback]
     noPatch: fail
     healsWithin: 5m
+    reference: {class: traffic-shift, file: fix-traffic-shift.yaml}
 rubric: ground-truth.md

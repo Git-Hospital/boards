@@ -62,4 +62,5 @@ expect:
     accept: [pool-resize]
     noPatch: fail
     healsWithin: 5m
+    reference: {class: pool-resize, file: fix-pool-resize.yaml}
 rubric: ground-truth.md

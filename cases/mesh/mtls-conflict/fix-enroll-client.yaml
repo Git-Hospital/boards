@@ -1,0 +1,9 @@
+# Reference fix: enroll the client's namespace in the ambient mesh, so the
+# plaintext client gets an identity and its calls satisfy STRICT. ztunnel
+# captures running pods, so no restart is needed.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+  labels:
+    istio.io/dataplane-mode: ambient

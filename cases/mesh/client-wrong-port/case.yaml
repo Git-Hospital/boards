@@ -80,4 +80,5 @@ expect:
     forbid: [traffic-shift, outlier-ejection, pool-resize, scoped-permissive, raise-route-timeout]
     noPatch: pass   # a dossier naming the client and its rollout diff is a full answer
     healsWithin: 5m
+    reference: {class: client-fix, file: fix-client-fix.yaml}
 rubric: ground-truth.md

@@ -1,0 +1,50 @@
+name: kind
+
+# The live tier of D20: the mesh testbed on a real kind cluster, weekly and
+# on demand. It never gates a PR. Its first runs also answer architecture §9
+# question 1: whether a free runner holds the testbed at all.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "space-separated case ids"
+        default: "mesh/error-surge mesh/noise-only mesh/mtls-conflict"
+
+permissions:
+  contents: read
+
+jobs:
+  mesh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CASES: ${{ inputs.cases || 'mesh/error-surge mesh/noise-only mesh/mtls-conflict' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install kind, kubectl and istioctl at the locked versions
+        run: |
+          set -euo pipefail
+          kind_version=$(sed -n 's/^  version: \(v[0-9.]*\)$/\1/p' testbed/testbed.lock | head -1)
+          istio_version=$(awk '/^istio:/{f=1} f && /version:/{print $2; exit}' testbed/testbed.lock)
+          mkdir -p "$HOME/bin"
+          curl -sSfLo "$HOME/bin/kind" "https://kind.sigs.k8s.io/dl/${kind_version}/kind-linux-amd64"
+          curl -sSfLo "$HOME/bin/kubectl" "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl"
+          curl -sSfL "https://github.com/istio/istio/releases/download/${istio_version}/istioctl-${istio_version}-linux-amd64.tar.gz" | tar -xz -C "$HOME/bin"
+          chmod +x "$HOME/bin/"*
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: go build -o boards ./cmd/boards
+      - name: oracle dummy on the live testbed
+        run: |
+          args=()
+          for c in $CASES; do args+=(--case "$c"); done
+          ./boards run --adapter adapters/dummy/oracle --track mesh "${args[@]}" --quiesce 60s --out out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report
+          path: out/

@@ -76,12 +76,12 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 
 	work := filepath.Join(r.cfg.Work, strings.ReplaceAll(c.ID, "/", "_"), string(twin))
 	if err := os.MkdirAll(work, 0o755); err != nil {
-		run.Inconclusive = "testbed_failed"
+		run.Inconclusive = DirtyTestbed
 		return run
 	}
 
 	if err := r.tb.Quiesce(ctx, r.cfg.Quiesce); err != nil {
-		run.Inconclusive = interrupted(ctx, "testbed_failed")
+		run.Inconclusive = interrupted(ctx, DirtyTestbed)
 		return run
 	}
 
@@ -100,7 +100,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 		if err := r.tb.Reset(cleanup, c, twin); err != nil {
 			r.cfg.Log("  reset failed: %v", err)
 			if run.Inconclusive == "" {
-				run.Inconclusive = "reset_failed"
+				run.Inconclusive = DirtyReset
 			}
 		}
 	}()
@@ -127,7 +127,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	injected = true
 	if err := r.tb.Inject(ctx, c, twin); err != nil {
 		r.cfg.Log("  inject failed: %v", err)
-		run.Inconclusive = interrupted(ctx, "testbed_failed")
+		run.Inconclusive = interrupted(ctx, DirtyTestbed)
 		stopTool()
 		return run
 	}
@@ -184,13 +184,19 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	if p := run.Patch; p != nil && twin == casefile.TwinDefect && c.Expect.Remediation != nil &&
 		r.tool.ProposesFixes && !slices.Contains(c.Expect.Remediation.Forbid, p.Class) {
 		run.Remedy = r.remedy(ctx, cleanup, c, p)
+		if !run.Remedy.Removed {
+			// Some of the tool's patch may still be in the cluster, so
+			// nothing that runs after this case can be trusted. The case is
+			// still scored: an irreversible patch is the tool's failure.
+			run.Dirty = DirtyPatch
+		}
 	}
 
 	run.DefectEndedAt = r.now()
 	injected = false
 	if err := r.tb.Reset(cleanup, c, twin); err != nil {
 		r.cfg.Log("  reset failed: %v", err)
-		run.Inconclusive = "reset_failed"
+		run.Inconclusive = DirtyReset
 	}
 
 	if watcher {
@@ -293,26 +299,35 @@ func (r *Runner) remedy(ctx, cleanup context.Context, c *casefile.Case, p *verdi
 		return m
 	}
 	m.Applied, m.AppliedAt = true, r.now()
+	// The patch must reach, within healsWithin, a state where the defect's
+	// condition is gone and every clean-twin check holds. The checks lag
+	// the defect by their rate window, so both are polled until then.
+	// Healed with CleanOK false at the deadline is a patch that removed the
+	// symptom by breaking the service (D12).
 	deadline := r.now().Add(c.Expect.Remediation.HealsWithin.Duration)
 	for {
 		st, err := r.tb.Defect(ctx, c)
-		if err == nil && st != testbed.Holds {
-			m.Healed, m.HealedAt = true, r.now()
-			break
+		m.Healed = err == nil && st != testbed.Holds
+		m.CleanOK = false
+		if m.Healed {
+			if m.HealedAt.IsZero() {
+				m.HealedAt = r.now()
+			}
+			m.CleanOK, m.Detail = true, ""
+			for i, o := range c.CleanTwin.Checks {
+				st, err := r.tb.Check(ctx, c, o)
+				if err != nil || st != testbed.Holds {
+					m.CleanOK = false
+					m.Detail = fmt.Sprintf("clean-twin check %d: %s", i, describe(st, err))
+					break
+				}
+			}
+			if m.CleanOK {
+				break
+			}
 		}
 		if !r.now().Before(deadline) || sleep(ctx, r.cfg.Poll) != nil {
 			break
-		}
-	}
-	if m.Healed {
-		m.CleanOK = true
-		for i, o := range c.CleanTwin.Checks {
-			st, err := r.tb.Check(ctx, c, o)
-			if err != nil || st != testbed.Holds {
-				m.CleanOK = false
-				m.Detail = fmt.Sprintf("clean-twin check %d: %s", i, describe(st, err))
-				break
-			}
 		}
 	}
 	if err := r.tb.RemovePatch(cleanup, c, p); err != nil {
@@ -366,6 +381,28 @@ func sleep(ctx context.Context, d time.Duration) error {
 
 func sleepUntil(ctx context.Context, at time.Time, now func() time.Time) error {
 	return sleep(ctx, at.Sub(now()))
+}
+
+// Reasons a twin leaves the testbed in an unknown state. The run must stop:
+// every later case would run on a cluster that is not the testbed.
+const (
+	DirtyReset   = "reset_failed"
+	DirtyPatch   = "patch_not_removed"
+	DirtyTestbed = "testbed_failed"
+)
+
+// Dirty reports whether a case left the testbed unusable.
+func Dirty(c score.Case) bool {
+	for _, r := range c.Runs {
+		if r.Dirty != "" {
+			return true
+		}
+		switch r.Inconclusive {
+		case DirtyReset, DirtyTestbed:
+			return true
+		}
+	}
+	return false
 }
 
 // ErrNoCases is returned when a selection is empty.
