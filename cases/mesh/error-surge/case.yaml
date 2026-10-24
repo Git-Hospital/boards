@@ -1,0 +1,52 @@
+id: mesh/error-surge
+track: mesh
+kind: fault
+set: open
+title: One canary subset serves 5xx
+provenance:
+  kind: synthetic
+  note: converted from scenarios/error-surge of mesh-incidents-bench (July-August 2026)
+author: kassvl
+authorRelation: [meshmedic]
+contaminatedFor: [meshmedic]   # MeshMedic was developed against this case (D13)
+target: {namespace: demo, service: payments, workload: payments-v2}
+inject:
+  - desc: make the v2 canary serve 500s
+    run: [kubectl, -n, demo, set, env, deploy/payments-v2, ERROR_RATE=0.9, ERROR_CODE=500]
+  - run: [kubectl, -n, demo, rollout, status, deploy/payments-v2, --timeout=180s]
+reset:
+  - run: [kubectl, -n, demo, set, env, deploy/payments-v2, ERROR_RATE-, ERROR_CODE-]
+  - run: [kubectl, -n, demo, rollout, status, deploy/payments-v2, --timeout=180s]
+cleanTwin:
+  checks:
+    - promql:
+        query: >-
+          sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments", response_code=~"2.."}[1m]))
+          / sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments"}[1m]))
+        op: ">"
+        value: 0.95
+oracle:
+  promql:
+    query: >-
+      sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments", response_code=~"5.."}[1m]))
+      / sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments"}[1m]))
+    op: ">"
+    value: 0.15
+settle: 90s
+window: 5m
+expect:
+  alarmWithin: 5m
+  resolvesWithin: 5m
+  culprits:
+    - level: 2
+      all: [{kind: Deployment, namespace: demo, name: payments-v2}]
+    - level: 1
+      all: [{kind: Service, namespace: demo, name: payments}]
+  quiet:
+    - {kind: Deployment, namespace: demo, name: payments-v1}
+    - {kind: Deployment, namespace: demo, name: ledger}
+  remediation:
+    accept: [outlier-ejection, traffic-shift, rollback]
+    noPatch: fail
+    healsWithin: 5m
+rubric: ground-truth.md

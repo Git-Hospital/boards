@@ -1,0 +1,12 @@
+# Dummy tool for testing boards itself (D32): alarms on everything: every clean twin is a false alarm.
+# It runs only against the dry-run testbed.
+name: dummy-panic
+category: dummy
+tracks: [mesh, helm, code]
+mode: one-shot
+output: structured
+proposesFixes: false
+needsLLM: false
+alarm: "the dummy's own decision, written straight into the verdict"
+culprits: "the dummy's own decision, written straight into the verdict"
+command: ["{{boards}}", dummy, panic]

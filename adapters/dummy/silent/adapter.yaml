@@ -1,0 +1,12 @@
+# Dummy tool for testing boards itself (D32): never says anything: detection fails, clean twins pass.
+# It runs only against the dry-run testbed.
+name: dummy-silent
+category: dummy
+tracks: [mesh, helm, code]
+mode: one-shot
+output: structured
+proposesFixes: true
+needsLLM: false
+alarm: "the dummy's own decision, written straight into the verdict"
+culprits: "the dummy's own decision, written straight into the verdict"
+command: ["{{boards}}", dummy, silent]

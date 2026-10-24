@@ -1,4 +1,18 @@
-# mesh-incidents-bench
+# boards (formerly mesh-incidents-bench)
+
+> **Moving to boards.** This repository is becoming boards, the Git-Hospital
+> benchmark: one core, three tracks (mesh, Helm, code), and every tool
+> measured through an adapter next to its domain's rivals. The decisions are
+> in [docs/decisions/0001-boards.md](docs/decisions/0001-boards.md) and the
+> design in [docs/architecture.md](docs/architecture.md).
+>
+> What exists today: the Go core (`cmd/boards`), the 11 scenarios below as
+> `cases/mesh/<id>/case.yaml`, and three dummy tools that test the scorer on
+> every PR. It runs in dry-run mode only (`boards run --dry-run --adapter
+> adapters/dummy/oracle`), which tests boards itself and never a tool. Until
+> the kind testbed lands, live runs still use `harness/run.sh` and the
+> scripts in `scenarios/`, as described below. Each scenario's ground truth
+> now lives next to its case, in `cases/mesh/<id>/ground-truth.md`.
 
 Reproducible service mesh failure scenarios, with ground truth, for scoring
 how well diagnostic and remediation tools handle mesh-layer incidents.
@@ -44,8 +58,9 @@ layer does exactly that, and the scenario now measures which tools can see
 a disappearance as well as an appearance.
 
 Each scenario directory contains `inject.sh`, `check.sh` (exits 0 while the
-incident is live), `reset.sh`, and `ground-truth.md` with the root cause,
-the expected remediation, and the scoring rubric.
+incident is live) and `reset.sh`. The root cause, the expected remediation
+and the scoring rubric are in `cases/mesh/<id>/ground-truth.md`, next to the
+scenario's `case.yaml`.
 
 ## Scoring
 

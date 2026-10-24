@@ -1,2 +1,3 @@
 results/raw/*.tmp
 .DS_Store
+boards-out/

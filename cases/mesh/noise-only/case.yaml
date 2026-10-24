@@ -1,0 +1,63 @@
+id: mesh/noise-only
+track: mesh
+kind: control
+set: open
+title: A healthy service with harmless noise; silence is the answer
+provenance:
+  kind: synthetic
+  note: converted from scenarios/noise-only of mesh-incidents-bench (July-August 2026)
+author: kassvl
+authorRelation: [meshmedic]
+contaminatedFor: [meshmedic]
+target: {namespace: demo, service: payments}
+inject:
+  - desc: an empty ConfigMap
+    run: [kubectl, apply, -f, "-"]
+    stdin: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: legacy-feature-flags
+        namespace: demo
+  - desc: a Service with no matching endpoints, the leftover of a retired workload
+    run: [kubectl, apply, -f, "-"]
+    stdin: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: payments-legacy
+        namespace: demo
+      spec:
+        selector:
+          app: payments-legacy-retired
+        ports:
+          - port: 8080
+            targetPort: 8080
+  - run: [kubectl, -n, demo, delete, pod, one-off-migration, --ignore-not-found]
+    allowFail: true
+  - desc: a one-off pod that completes successfully
+    run: [kubectl, -n, demo, run, one-off-migration, --image=busybox:1.36, --restart=Never, --labels=purpose=bench-noise, --, /bin/sh, -c, echo migration done]
+  - run: [kubectl, -n, demo, wait, pod/one-off-migration, "--for=jsonpath={.status.phase}=Succeeded", --timeout=120s]
+reset:
+  - run: [kubectl, -n, demo, delete, configmap, legacy-feature-flags, --ignore-not-found]
+  - run: [kubectl, -n, demo, delete, service, payments-legacy, --ignore-not-found]
+  - run: [kubectl, -n, demo, delete, pod, one-off-migration, --ignore-not-found]
+oracle:
+  # The control's condition: the noise is in place and payments is healthy.
+  all:
+    - exists: {kind: configmap, namespace: demo, name: legacy-feature-flags}
+    - exists: {kind: service, namespace: demo, name: payments-legacy}
+    - exists: {kind: pod, namespace: demo, name: one-off-migration}
+    - promql:
+        query: >-
+          sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments", response_code=~"5.."}[1m]))
+          / sum(rate(istio_requests_total{reporter="waypoint", destination_service_name="payments"}[1m]))
+        op: "<"
+        value: 0.05
+        noData: holds   # no 5xx series at all is healthy
+settle: 90s
+window: 5m
+expect:
+  remediation:
+    noPatch: pass
+rubric: ground-truth.md
