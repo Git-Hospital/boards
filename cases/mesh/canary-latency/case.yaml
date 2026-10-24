@@ -9,7 +9,7 @@ provenance:
 author: kassvl
 authorRelation: [meshmedic]
 contaminatedFor: [meshmedic]
-target: {namespace: demo, service: payments, workload: payments-v2}
+target: {namespace: demo, service: payments}
 inject:
   - desc: slow the v2 canary to about 1.2s at p50
     run: [kubectl, -n, demo, set, env, deploy/payments-v2, TIMING_50_PERCENTILE=1200ms, TIMING_90_PERCENTILE=1500ms]
@@ -39,8 +39,6 @@ expect:
   culprits:
     - level: 2
       all: [{kind: Deployment, namespace: demo, name: payments-v2}]
-    - level: 1
-      all: [{kind: Service, namespace: demo, name: payments}]
   quiet:
     - {kind: Deployment, namespace: demo, name: payments-v1}
     - {kind: Deployment, namespace: demo, name: ledger}

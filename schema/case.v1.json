@@ -26,12 +26,12 @@
     "authorRelation": {"type": "array", "items": {"type": "string"}},
     "contaminatedFor": {"type": "array", "items": {"type": "string"}},
     "target": {
+      "description": "The scope an operator would point a tool at. It never names a culprit: every tool receives it.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "namespace": {"type": "string"},
         "service": {"type": "string"},
-        "workload": {"type": "string"},
         "chart": {"type": "string"},
         "repo": {"type": "string"}
       }

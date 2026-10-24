@@ -74,11 +74,12 @@ type Verification struct {
 	VerifiedBy string `yaml:"verifiedBy"`
 }
 
-// Target names what the case is about. Adapters receive it as BOARDS_TARGET_*.
+// Target is the scope an operator would point a tool at, such as the
+// service they watch. Every adapter receives it as BOARDS_TARGET_*, so it
+// never names a culprit.
 type Target struct {
 	Namespace string `yaml:"namespace"`
 	Service   string `yaml:"service"`
-	Workload  string `yaml:"workload"`
 	Chart     string `yaml:"chart"`
 	Repo      string `yaml:"repo"`
 }

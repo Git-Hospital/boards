@@ -56,8 +56,6 @@ expect:
       all: [{kind: AuthorizationPolicy, namespace: demo, name: payments-block-loadgen}]
     - level: 2
       all: [{kind: ServiceAccount, namespace: demo, name: default}]
-    - level: 1
-      all: [{kind: Service, namespace: demo, name: payments}]
   quiet:
     - {kind: PeerAuthentication, namespace: demo, name: default}
     - {kind: Deployment, namespace: demo, name: payments-v1}

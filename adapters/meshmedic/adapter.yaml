@@ -1,0 +1,21 @@
+# MeshMedic watching the case's target with its own defaults. The adapter
+# script `run` turns MeshMedic's `watch --events` lines into the verdict;
+# the mapping below is frozen for the suite (D10). It needs `meshmedic`
+# (a build after v1.0.0, the first with `watch --events`) and python3 on PATH.
+name: meshmedic
+category: mesh-specific
+tracks: [mesh]
+mode: watcher
+output: structured
+proposesFixes: true
+needsLLM: false
+# MeshMedic's flag form keeps no learned baseline, so it needs only to see
+# the healthy target once before the defect arrives.
+warmup: 60s
+alarm: >-
+  an alarm at each incident event MeshMedic writes for the target; a resolve
+  when the last open incident has resolved
+culprits: >-
+  the culprits MeshMedic names in its incident events, from evidence its
+  catalog entries mark with blame; none are inferred from the report's tables
+command: ["{{dir}}/run"]

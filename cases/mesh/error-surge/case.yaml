@@ -9,7 +9,7 @@ provenance:
 author: kassvl
 authorRelation: [meshmedic]
 contaminatedFor: [meshmedic]   # MeshMedic was developed against this case (D13)
-target: {namespace: demo, service: payments, workload: payments-v2}
+target: {namespace: demo, service: payments}
 inject:
   - desc: make the v2 canary serve 500s
     run: [kubectl, -n, demo, set, env, deploy/payments-v2, ERROR_RATE=0.9, ERROR_CODE=500]
@@ -40,8 +40,6 @@ expect:
   culprits:
     - level: 2
       all: [{kind: Deployment, namespace: demo, name: payments-v2}]
-    - level: 1
-      all: [{kind: Service, namespace: demo, name: payments}]
   quiet:
     - {kind: Deployment, namespace: demo, name: payments-v1}
     - {kind: Deployment, namespace: demo, name: ledger}
