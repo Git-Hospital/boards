@@ -1,6 +1,6 @@
 # MeshMedic results
 
-- Tool: [MeshMedic](https://github.com/kassvl/meshmedic) v1.0.0, report-only mode
+- Tool: [MeshMedic](https://github.com/Git-Hospital/meshmedic) v1.0.0, report-only mode
   (`meshmedic watch`, full catalog, no gitops)
 - Date: 2026-08-19 (UTC), testbed: kind + Istio 1.24 ambient, single node
 - Raw output: `raw/*-meshmedic-*.txt`, the 2026-08-19T21:00Z and later timestamps
