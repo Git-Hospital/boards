@@ -30,7 +30,7 @@ testbed dry-run is not standard: this result never enters the official table
 `--dry-run` replaces the cluster with a fake testbed, so it checks boards
 itself, never a tool. `adapters/dummy/` holds three stand-in tools that CI
 runs on every pull request: one that always answers right (`oracle`), one
-that says nothing (`silent`) and one that crashes (`panic`).
+that says nothing (`silent`) and one that alarms on everything (`panic`).
 
 ## A real run
 
@@ -51,8 +51,8 @@ built itself (a reused run is marked not standard). `--keep` leaves the
 cluster up for inspection.
 
 To score a real tool, pass its adapter instead: [`adapters/meshmedic`](adapters/meshmedic)
-needs a `meshmedic` built from its main branch (the first with `watch --events`)
-and python3 on `PATH`.
+needs a `meshmedic` build after v1.0.0 (the first with `watch --events`) and
+python3 on `PATH`.
 
 ## What is scored
 
@@ -60,8 +60,8 @@ and python3 on `PATH`.
 | --- | --- |
 | detection | Did the tool raise an alarm while the fault was live, within the case's time limit? |
 | diagnosis | Did it blame the right object? Naming the service but not the subset is partial; naming a healthy neighbour is false blame. |
-| remediation | Is its proposed fix one of the case's accepted classes, and none of its forbidden ones? |
-| resolves | Applied to the cluster, does the fix make the fault's signal go away? `null` until a tool's patch has been applied. |
+| remediation | Applied to the cluster, does the tool's patch heal the fault within the case's time limit, keep the clean twin's checks passing, and come off again? A patch that heals but is not one of the case's accepted classes is partial. |
+| resolves | Did the tool's alarm clear after the fault was removed? `null` for one-shot tools, which never hold an alarm open. |
 | clean twin | On the same app without the fault, did the tool stay quiet? |
 
 A result that could not be measured is `null` with a reason, never a pass.
@@ -79,9 +79,9 @@ the root cause for a human reader.
 | `client-dns-typo` | a client rollout targets a host that does not resolve | none in the mesh: fix the client's host |
 | `client-wrong-port` | a client rollout targets a port the service does not expose | none in the mesh: fix the client's port |
 | `client-wrong-scheme` | a client rollout speaks https to a plain-HTTP service | none in the mesh: fix the client's scheme |
-| `error-surge` | one canary subset serves 5xx | shift traffic away or eject the subset |
+| `error-surge` | one canary subset serves 5xx | shift traffic away, eject the subset, or roll back |
 | `fault-injection-left` | a fault-injection stanza is left on a production VirtualService | remove the stanza, keep the routes |
-| `mtls-conflict` | STRICT mTLS rejects a plaintext client outside the mesh | enroll the client |
+| `mtls-conflict` | STRICT mTLS rejects a plaintext client outside the mesh | enroll the client, or a scoped PERMISSIVE policy |
 | `noise-only` | none: a healthy service with harmless noise | none; silence is the answer |
 | `pool-overflow` | the circuit breaker sheds load from an undersized connection pool | resize the pool |
 | `route-timeout-too-short` | a route timeout is shorter than the backend's latency (504) | none automatic: raising the timeout heals, but only an operator knows the intent |
@@ -108,8 +108,9 @@ These predate the Go core. They were produced with the earlier shell harness
   scenarios. A home game, for the reason above.
 - [results/istioctl-analyze.md](results/istioctl-analyze.md): Istio's own
   configuration analyzer, the same-domain reference. It is a config-time
-  linter, so it catches invalid references that MeshMedic does not, and sees
-  nothing of a runtime 5xx surge or rate limit.
+  linter, so it catches invalid references that MeshMedic does not, and does
+  not report a runtime 5xx surge or a rate limit throttling traffic (it only
+  warns about EnvoyFilter hygiene).
 
 An earlier version also scored HolmesGPT and k8sgpt and headlined that
 MeshMedic beat them. That comparison was withdrawn: those tools target
@@ -139,7 +140,8 @@ adapters, compared within their own category.
 `reset.sh`) are the shell harness the results above were made with. It runs
 against the MeshMedic demo environment and records the tool's wall time and
 the cluster objects it created or deleted. It stays until every adapter runs
-under `boards run`.
+under `boards run`. [CONTRIBUTING.md](CONTRIBUTING.md) has the invocation, the
+testbed setup and the 0-2 scale those results use.
 
 ## License
 

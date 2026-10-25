@@ -118,7 +118,7 @@ Considered and rejected:
 - the clean twin;
 - the provenance (D15).
 
-  When no built-in oracle fits, `script:` runs a check of the case's own. A JSON Schema validates every case in CI. The proof specs in `meshmedic/proof/*.yaml` are already close to this shape.
+When no built-in oracle fits, `script:` runs a check of the case's own. A JSON Schema validates every case in CI. The proof specs in `meshmedic/proof/*.yaml` are already close to this shape.
 
 Considered and rejected:
 
@@ -128,7 +128,7 @@ Considered and rejected:
 #### D10. How boards gets a tool's answer
 **One adapter per tool, in this repository** (`adapters/<tool>/`). An adapter runs the tool, reads its output, and writes the shared verdict JSON: did it alarm, which culprits it named, which patch it proposed. The tool itself does not change. This is the only way rival tools can be measured, and MeshMedic gets no special treatment.
 
-  The boards maintainers write every adapter, rivals' included, so an adapter could handicap a rival or favour MeshMedic. To prevent that:
+The boards maintainers write every adapter, rivals' included, so an adapter could handicap a rival or favour MeshMedic. To prevent that:
   - each adapter declares in `adapter.yaml` what counts as an alarm and how its output maps to culprits;
   - that mapping is frozen for a suite, published, and offered to the rival tool's maintainers for review;
   - every report names the adapter's commit.
@@ -156,11 +156,11 @@ Considered and rejected:
 2. The clean twin's checks still pass, so the patch broke nothing else.
 3. The patch can be removed again.
 
-  Two rules close the obvious cheat, a patch that deletes or scales down the service:
+Two rules close the obvious cheat, a patch that deletes or scales down the service:
   - "Cleared" requires traffic. When the oracle returns no data, the defect does not count as cleared.
   - Every case with a remediation expectation declares clean-twin checks, including a success rate measured with traffic present (architecture §4).
 
-  The axis applies only to tools and tracks that propose fixes. Elsewhere it is `null`, not 0. Helmbulance and GitHealthCheck propose none, so the Helm and code tracks have no remediation axis for them.
+The axis applies only to tools and tracks that propose fixes. Elsewhere it is `null`, not 0. Helmbulance and GitHealthCheck propose none, so the Helm and code tracks have no remediation axis for them.
 
 Considered and rejected:
 
@@ -184,7 +184,7 @@ Considered and rejected:
 3. Every period (D31), each tool's current release runs on the holdout.
 4. The cases are then opened with their results, so anyone can re-run and check them. They join the open set, and a new holdout is written.
 
-  The report shows each tool release's date relative to the digest date. A hash proves that a case existed; it does not prove that a tool's author had not read it. D28 adds the rule for that.
+The report shows each tool release's date relative to the digest date. A hash proves that a case existed; it does not prove that a tool's author had not read it. D28 adds the rule for that.
 
 Considered and rejected:
 
@@ -195,7 +195,7 @@ Considered and rejected:
 **A real source, and a different author where possible.**
 - Every mesh and Helm exam case comes from a public, real event: an Istio or chart GitHub issue, a published postmortem, or a CVE. Its link is a required field in `case.yaml`.
 - Code exam cases have no such event (D22). They require documented hand verification instead: the method used, and a second person who verified the values.
-- Where possible, the author did not build the Git-Hospital tool for that track. For example, Ege writes mesh cases.
+- Where possible, the author did not build the Git-Hospital tool for that track. For example, a Helmbulance maintainer writes mesh cases.
 - Each case records the author's relationship to the tools it scores.
 
 Considered and rejected:
@@ -210,7 +210,7 @@ Considered and rejected:
 - the cost: wall time, and cluster objects created or deleted during the run;
 - `null` with a reason for anything that was not measured.
 
-  A single total is how "66/66" happened.
+A single total is how "66/66" happened.
 
 Considered and rejected:
 
@@ -238,7 +238,7 @@ Considered and rejected:
 - Prometheus;
 - the app images.
 
-  Another version can be run (`--istio 1.26`), but the report marks it non-standard and it never enters the official table.
+Another version can be run (`--istio 1.26`), but the report marks it non-standard and it never enters the official table.
 
 Considered and rejected:
 
@@ -278,7 +278,7 @@ Considered and rejected:
 - Small synthetic charts with one defect each.
 - Synthetic in the open set, real pairs in the holdout.
 
-Ege is told before any Helmbulance result is published.
+Helmbulance's maintainer is told before any Helmbulance result is published.
 
 #### D22. What a correct answer is in the code track
 **Measurement accuracy.** The correct values are computed by hand on small fixture repositories and verified: "this function's cyclomatic complexity is 7", "this repository's truck factor is 2", "line coverage is 64.3%". Tools are scored on how close they come.
@@ -322,7 +322,7 @@ Considered and rejected:
   1. It performs the four assertions on all 16 proofs.
   2. It has equivalents of meshmedic-prove's other two checks, or there is a recorded decision to drop them. The two checks are the silence run (a quiet cluster watched after a baseline warm-up, `pkg/proof/silence.go`) and the winnability check, which rejects a proof whose deadline is shorter than its entry's hold duration (`pkg/proof/winnable.go`).
 
-    Until then both exist, so there is never a moment without end-to-end evidence.
+  Until then both exist, so there is never a moment without end-to-end evidence.
 
 Considered and rejected:
 
@@ -352,18 +352,18 @@ Considered and rejected:
 #### D28. Process and version numbers
 **The GitHealthCheck process, and two version numbers.**
 - Every change is a PR, with an automated review, merged by the maintainer.
-- Ege, Helmbulance's maintainer, co-maintains the Helm track if Ege agrees.
-- The holdout repository is private, and only the two maintainers can read it. Both of them author tools that boards scores, so reading the holdout comes with a rule. Between a holdout being sealed and opened, a reader does not merge behaviour changes to their own tool in that track. Any commit to that tool made after the reader saw the cases is listed in the report.
+- Helmbulance's maintainer co-maintains the Helm track, if they agree.
+- The holdout repository is private, and only the boards maintainer and Helmbulance's maintainer can read it. Both of them author tools that boards scores, so reading the holdout comes with a rule. Between a holdout being sealed and opened, a reader does not merge behaviour changes to their own tool in that track. Any commit to that tool made after the reader saw the cases is listed in the report.
 - Two things are versioned separately:
   - the tool, with semver (`boards v0.2.0`);
   - the case set, by calendar (`suite 2026.4`).
 
-    Every result carries both, for example "MeshMedic 1.1, on suite 2026.4, measured with boards 0.3". Scores from different suites are never compared by accident.
+  Every result carries both, for example "MeshMedic 1.1, on suite 2026.4, measured with boards 0.3". Scores from different suites are never compared by accident.
 
 Considered and rejected:
 
 - Commit directly to main until v0.1.
-- The GitHealthCheck process, plus a required approval from Ege on every PR.
+- The GitHealthCheck process, plus a required approval from Helmbulance's maintainer on every PR.
 
 ### Open points settled in the last round
 
@@ -384,7 +384,7 @@ Considered and rejected:
 - *Self-reported:* the author ran boards and attached the raw outputs and `report.json`.
 - *Verified:* maintainers re-ran three randomly chosen cases with the same versions, and the results matched. "Matched" means the same detection status and the same culprit level on each re-run case, with wall times within a stated tolerance.
 
-  The leaderboard shows the two badges apart. Submissions cover the open set only, since the holdout is private.
+The leaderboard shows the two badges apart. Submissions cover the open set only, since the holdout is private.
 
 Considered and rejected:
 
@@ -412,14 +412,14 @@ Considered and rejected:
 
 ## Consequences
 
-- **This repository changes identity.** README, CONTRIBUTING and the results pages are rewritten when the rename lands. The current contradictions found in H1 are fixed first, in their own small PR, so the old repository is honest until the move.
+- **This repository changed identity.** It was renamed from mesh-incidents-bench, and README, CONTRIBUTING and the results pages were rewritten to match.
 - **MeshMedic loses a binary.** `cmd/meshmedic-prove`, `pkg/proof` and `proof/` leave MeshMedic in the PR that follows boards reaching the D25 condition. MeshMedic's CI then runs the boards Action.
-- **Helmbulance is not changed by this record.** The adapter lives in boards and calls the public Helmbulance CLI. Ege is told before any result is published (D21), and is asked about co-maintaining the Helm track (D28).
+- **Helmbulance is not changed by this record.** The adapter lives in boards and calls the public Helmbulance CLI. Helmbulance's maintainer is told before any result is published (D21), and is asked about co-maintaining the Helm track (D28).
 - **The code track waits for GitHealthCheck.** Its fixture repositories and hand-verified values can be written before, and rival tools (gocyclo, radon, jscpd, scc) can be measured before GitHealthCheck v0.2.0 exists.
 
 ### Dependency on MeshMedic's direction
 
-A separate proposal from 23 October 2026, not yet decided, would turn MeshMedic toward compatibility testing: "does this chart or manifest break when it enters an Istio mesh?", with `test`, `lint` and `watch` modes. This record measures incident detection, which is the `watch` mode. If that proposal is accepted, the mesh track keeps its incident cases, and a compatibility sub-track is considered after v1.0. Nothing in this record blocks either direction.
+MeshMedic's [ADR 0001](https://github.com/Git-Hospital/meshmedic/blob/main/docs/decisions/0001-compat-engine.md) (23 October 2026) proposed turning it toward compatibility testing: "does this chart or manifest break when it enters an Istio mesh?". Its pilot narrowed that to a compatibility atlas. This record measures incident detection, MeshMedic's `watch` mode. If a compatibility mode is built, the mesh track keeps its incident cases, and a compatibility sub-track is considered after v1.0. Nothing in this record blocks either direction.
 
 ## Milestones and the v1.0 exit criteria
 
