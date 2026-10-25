@@ -14,9 +14,10 @@ The footer of each `results/raw/*` file carries this count alongside the tool's
 wall time. It is a property of the tool, not of the incident, so it is
 comparable across runs and across tools.
 
-## Why MeshMedic's is zero by design
+## Read-only tools: zero by design
 
-MeshMedic reads and never writes. Its detection is Prometheus queries; its
+Some tools have a footprint of zero by construction. MeshMedic, scored here
+and written by the same author, is one: it reads and never writes. Its detection is Prometheus queries; its
 configuration and triage evidence is read-only `kubectl get` and `kubectl logs`.
 It proposes remediation as a pull request against a config repository, which a
 human merges, so nothing is applied to the cluster by the tool at all. The

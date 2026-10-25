@@ -13,13 +13,12 @@ did not build the tool being scored. That is what breaks the home game.
 
 ## What a scenario is
 
-> **During the move to boards** (see the README), a new scenario is written
-> as a case: `cases/mesh/<id>/case.yaml` plus its `ground-truth.md`. Copy
-> `cases/mesh/error-surge/`, run `go run ./cmd/boards validate`, and see
+> **New scenarios are cases:** `cases/mesh/<id>/case.yaml` plus its
+> `ground-truth.md`. Copy `cases/mesh/error-surge/`, run
+> `go run ./cmd/boards validate`, and see
 > [docs/architecture.md](docs/architecture.md) §4 for every field. The
-> four-file shape below is what the 11 existing scenarios still use for live
-> runs until the kind testbed lands, and the rules further down apply to
-> both.
+> script shape below is the earlier harness, which the existing results were
+> made with; the rules further down apply to both.
 
 A scenario is a directory under `scenarios/<id>/` with three scripts, and its
 ground truth lives in `cases/mesh/<id>/ground-truth.md`. Each one
@@ -103,12 +102,12 @@ The harness injects the fault, waits for `check.sh`, runs the tool with the
 incident live, saves the output under `results/raw/`, records a footer with
 the tool's wall time and the cluster objects it created or deleted, and
 resets the testbed. Put your scored result under `results/` following the
-format of the existing files, and add a row to the README leaderboard.
+format of the existing files, and link it from the README's "Results so far".
 
 ## Testbed
 
 Scenarios run against the
-[MeshMedic demo environment](https://github.com/kassvl/meshmedic) (kind +
+[MeshMedic demo environment](https://github.com/Git-Hospital/meshmedic) (kind +
 Istio ambient + a two-version payments service + Prometheus). Bring it up
 with `demo/scripts/00..02` from that repo, then port-forward Prometheus to
 `127.0.0.1:9090`.

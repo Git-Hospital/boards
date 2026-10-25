@@ -1,6 +1,6 @@
 # boards architecture
 
-Status: proposed for the move from mesh-incidents-bench to boards (v0.2.0 onward). Decisions are recorded in [`decisions/0001-boards.md`](decisions/0001-boards.md) and cited here as D1-D32. This document sets the boundaries the code is built inside. It changes when the code teaches us something.
+Status: accepted; the core, the mesh testbed and the first adapters are built against it. Decisions are recorded in [`decisions/0001-boards.md`](decisions/0001-boards.md) and cited here as D1-D32. This document sets the boundaries the code is built inside. It changes when the code teaches us something.
 
 ## 1. What the system does
 
@@ -268,11 +268,11 @@ Exit codes follow Helmbulance:
   - A tracking issue lists the 16 proofs. Each is ticked when the boards case, run with the MeshMedic adapter on the testbed, passes detection, diagnosis (culprit named, quiet neighbours untouched) and resolves.
   - The silence run and the winnability check are listed too. Each is ticked when ported, or when a recorded decision drops it. Winnability maps to a schema rule: `expect.alarmWithin` must exceed the hold duration that the adapter declares for the tool.
 
-## 9. Open questions, to settle by spikes before the code depends on them
+## 9. Open questions
 
 1. **Does a free GitHub runner fit the mesh testbed?** It has to hold kind, Istio ambient, Prometheus and the app, and finish three cases within a reasonable job time. Spike before v0.3.0.
-2. **How does the MeshMedic adapter get the patch?** MeshMedic's report is Markdown only (committee O2). Either MeshMedic gains a JSON output, which is a MeshMedic change and its own PR, or the adapter parses the rendered patch block. JSON output is preferred.
-3. **How is a patch applied faithfully?** The committee showed a DestinationRule patch that likely does not override the faulty one (O1). Patch formats must say whether they create a resource, replace one, or merge into a named target. Applying must follow that, not guess.
+2. **How does the MeshMedic adapter get the patch?** Settled: MeshMedic gained JSON events (`watch --events`), and [`adapters/meshmedic`](../adapters/meshmedic) reads them.
+3. **How is a patch applied faithfully?** A DestinationRule patch from MeshMedic likely does not override the faulty one. Patch formats must say whether they create a resource, replace one, or merge into a named target. Applying must follow that, not guess.
 4. **Where does the alert-rule baseline come from?** It must not be written by us, or we would tune it. Candidate: a published community rule set for Istio, used unmodified and pinned.
 5. **What happens when a code-track tool uses a different definition?** Some metrics have more than one definition: radon and gocyclo count cyclomatic complexity slightly differently. Two ways to score: against the definition the tool states it implements, or against one documented definition, with the difference reported as error. Decide before v0.6.0.
-6. **What happens to links when the repository is renamed?** The rename's timing affects the GitHub Pages URL and the links from MeshMedic's README. Rename before the leaderboard exists.
+6. **What happens to links when the repository is renamed?** Settled: it was renamed from mesh-incidents-bench before any leaderboard existed, and GitHub redirects the old URL.
