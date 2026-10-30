@@ -141,16 +141,21 @@ An adapter is a directory with an `adapter.yaml` and an executable:
 ```yaml
 name: meshmedic
 category: mesh-specific      # mesh-specific | config-linter | general-ai-agent | helm-tester | static-linter | code-metrics
+tracks: [mesh]
 mode: watcher                # watcher (runs until killed) | one-shot
 output: structured           # structured | prose
 proposesFixes: true
 needsLLM: false
 warmup: 5m                   # baseline learning before the window; relative thresholds need it
 secrets: []                  # names of environment variables the adapter needs, e.g. an API key
-version: [meshmedic, version]
 alarm: "an incident report with a firing scenario"     # what counts as an alarm, frozen per suite (D10)
 culprits: "the workload labels in the report's evidence"
+command: ["{{dir}}/run"]
 ```
+
+- `tracks` lists the case tracks this adapter supports (for example, `mesh`).
+- `command` is the argument vector the runner executes. The `{{boards}}` placeholder expands to the boards binary, and `{{dir}}` expands to this adapter's directory.
+- The tool's version is not an adapter setting. The tool writes it to `tool.version` in `verdict.json`; the runner reads that value and passes it to `report.New`, which writes it to `tool.version` in the report.
 
 The runner calls `run --work <dir> --window <duration>`. A real tool gets nothing that names the case: not the case directory (it holds the expected culprits, the reference fix and the rubric), not the case id (it names the defect) and not the twin (it says whether there is a defect). Only a dummy adapter also gets `--case <dir> --twin <twin>`, because answering from the case file is its job. The work directory is a fresh temporary directory named after nothing, and HOME is a fresh one beside it, so a tool cannot read its siblings or carry state from one twin to the next; the regular files it leaves are copied to the report afterwards. The runner provides the following, and nothing else from the user's environment:
 - `KUBECONFIG`, set to the private kubeconfig, which contains only the cluster boards created;
