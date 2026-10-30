@@ -18,8 +18,8 @@ telemetry (some need infrastructure the single-service ambient testbed lacks).
 | `DENY` | RBAC/authorization denial | mtls-policy-conflict-ambient, authz-deny-flood |
 | `RL` | Rate limited | rate-limit-throttling (EnvoyFilter local rate limit on the payments waypoint) |
 | `UAEX` | External authorization denied | external-authz-denial (ext_authz filter calling a deny-all service; distinct from the native-policy DENY above) |
-| `UH` | No healthy upstream | upstream-host-ejection-flood, subset-selector (enriched) |
-| `UO` | Upstream overflow (circuit breaking) | pool-overflow |
+| `UH` | No healthy upstream | upstream-host-ejection-flood (ejection or subset mismatch) |
+| `UO` | Upstream overflow (circuit breaking) | connection-pool-overflow |
 | `UT` | Upstream request timeout | route-timeout-too-short |
 | `FI` | Fault injected | fault-injection-left-in-production |
 | `NR` | No route found | no-route-blackhole (source-keyed: NR carries `destination_service_name=unknown`, so the signal keys on `source_workload_namespace`, confirmed live) |
@@ -34,10 +34,9 @@ inject them cleanly.
 | `NR` | No route found | ~~missing/broken VirtualService route~~ | **validated and merged** as `no-route-blackhole` (source-keyed) | done |
 | `DF` | DNS resolution failed | proxy-side DNS failure to a destination | yes: point a ServiceEntry/host at an unresolvable name | high (also the mesh-native counterpart to the client-side `client-dns-typo`) |
 | `UF` | Upstream connection failure | backend unreachable at the connection layer | yes: wrong port / backend down | high (overlaps client-wrong-port triage; UF is the telemetry-native signal) |
-| `URX` | Upstream retry limit exceeded | retries exhausted against a flaky backend | **no on this testbed** (measured 2026-08-19): `envoy_cluster_upstream_rq_retry` exists with 5 series, all `cluster_name="xds-grpc"` (a proxy's own connection to istiod). There is no application-cluster retry counter to read, so `retry-storm-damping` cannot fire here regardless of injected fault | blocked |
+| `URX` | Upstream retry limit exceeded | retries exhausted against a flaky backend | **no on this testbed** (measured 2026-08-19): `envoy_cluster_upstream_rq_retry` exists with 5 series, all `cluster_name="xds-grpc"` (a proxy's own connection to istiod). There is no application-cluster retry counter to read, so `retry-storm-damping` cannot fire here regardless of injected fault | blocked until application-cluster retry counters are exposed |
 | `UC` | Upstream connection termination | backend closed the connection mid-request | yes: crash/kill the backend under load | medium |
 | `UR` | Upstream remote reset | backend sent a TCP reset | yes: backend closes abruptly | medium |
-| `URX` | Upstream retry limit exceeded | retries exhausted against a flaky backend | yes: retry policy + intermittent 5xx | medium |
 | `UPE` | Upstream protocol error | protocol mismatch (h2/h1, TLS) | partial: overlaps client-wrong-scheme | medium |
 | `SI` | Stream idle timeout | idle stream cut by the proxy | yes-ish: slow/stalled backend | low |
 | `DT` | Duration timeout | request exceeded max stream duration | yes-ish: max-duration policy + slow backend | low |
