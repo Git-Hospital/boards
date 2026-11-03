@@ -101,6 +101,18 @@ func TestValidateRejects(t *testing.T) {
 			strings.Replace(strings.Replace(valid, "title: sample", "title: sample\ntarget: {namespace: demo, service: x}", 1), "{kind: Deployment, name: x}", "{kind: Service, namespace: demo, name: x}", 1),
 			"is the target every tool is given",
 		},
+		"culprit is quiet": {
+			strings.Replace(valid, "expect:\n", "expect:\n  quiet: [{kind: deployment, name: x}]\n", 1),
+			"culprit Deployment/x is also expected to be quiet",
+		},
+		"quiet namespace matches unspecified culprit": {
+			strings.Replace(valid, "expect:\n", "expect:\n  quiet: [{kind: Deployment, namespace: demo, name: x}]\n", 1),
+			"culprit Deployment/x is also expected to be quiet",
+		},
+		"culprit namespace matches unspecified quiet": {
+			strings.Replace(strings.Replace(valid, "{kind: Deployment, name: x}", "{kind: Deployment, namespace: demo, name: x}", 1), "expect:\n", "expect:\n  quiet: [{kind: Deployment, name: x}]\n", 1),
+			"culprit Deployment/demo/x is also expected to be quiet",
+		},
 		"unwinnable window": {
 			strings.Replace(valid, "window: 5m", "window: 1m", 1),
 			"no tool could pass",
@@ -131,6 +143,26 @@ func TestValidateRejects(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: got %v, want an error containing %q", name, err, tc.want)
 		}
+	}
+}
+
+func TestValidateAcceptsDistinctQuietEntities(t *testing.T) {
+	for _, entity := range []string{
+		"{kind: Deployment, namespace: demo, name: y}",
+		"{kind: Deployment, namespace: other, name: x}",
+		"{kind: Service, namespace: demo, name: x}",
+	} {
+		t.Run(entity, func(t *testing.T) {
+			body := strings.Replace(valid, "{kind: Deployment, name: x}", "{kind: Deployment, namespace: demo, name: x}", 1)
+			body = strings.Replace(body, "expect:\n", "expect:\n  quiet: ["+entity+"]\n", 1)
+			c, err := Load(write(t, body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Validate(c); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

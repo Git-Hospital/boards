@@ -54,6 +54,16 @@ func Validate(c *Case) error {
 			}
 		}
 	}
+	for _, g := range c.Expect.Culprits {
+		for _, culprit := range g.All {
+			for _, quiet := range c.Expect.Quiet {
+				if strings.EqualFold(culprit.Kind, quiet.Kind) && culprit.Name == quiet.Name &&
+					(culprit.Namespace == "" || quiet.Namespace == "" || culprit.Namespace == quiet.Namespace) {
+					add("culprit %s is also expected to be quiet", culprit)
+				}
+			}
+		}
+	}
 
 	if c.Rubric != "" {
 		if _, err := os.Stat(filepath.Join(c.Dir, c.Rubric)); err != nil {
