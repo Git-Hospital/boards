@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,5 +177,76 @@ func TestPatchThatBreaksTheServiceIsNotHealed(t *testing.T) {
 	got := newRunner(t, tb, a).Case(context.Background(), testCase(time.Minute, time.Minute))
 	if ax := got.Axes[score.Remediation]; ax.Status != score.Fail || ax.Reason != "broke_clean_twin" {
 		t.Errorf("remediation %s (%s), want fail broke_clean_twin", ax.Status, ax.Reason)
+	}
+}
+
+// A real tool runs in a directory named after nothing, with a fresh HOME outside the report, so
+// its working directory, --work and HOME do not give away the case or the twin and it carries no
+// state from one twin to the next; its files still land under work/<case>/<twin> (#9).
+func TestToolWorkDirNamesNothing(t *testing.T) {
+	tb := testbed.NewFake(execx.BaseEnv(t.TempDir()))
+	a := tool(t, "one-shot", "pwd > where.txt\necho \"$@\" >> where.txt\necho \"$HOME\" >> where.txt\n"+
+		"if [ -e \"$HOME/marker\" ]; then echo carried-state >> where.txt; fi\ntouch \"$HOME/marker\"\n"+
+		"mkdir sub\nln -s /etc/hosts link\necho '"+verdictWithoutPatch+"' > verdict.json\n")
+	a.Category = "mesh-specific"
+	c := testCase(time.Second, time.Second)
+	c.ID = "mesh/error-surge"
+	r := newRunner(t, tb, a)
+
+	for _, twin := range []casefile.Twin{casefile.TwinDefect, casefile.TwinClean} {
+		run := r.twin(context.Background(), c, twin)
+		if run.VerdictErr != "" || run.Inconclusive != "" {
+			t.Fatalf("%s: run failed: %q %q", twin, run.VerdictErr, run.Inconclusive)
+		}
+		keep := filepath.Join(r.cfg.Work, "mesh_error-surge", string(twin))
+		where, err := os.ReadFile(filepath.Join(keep, "where.txt"))
+		if err != nil {
+			t.Fatalf("%s: the tool's files were not kept for the report: %v", twin, err)
+		}
+		for _, leak := range []string{"error-surge", string(twin), r.cfg.Work, "carried-state"} {
+			if strings.Contains(string(where), leak) {
+				t.Errorf("%s: the tool's directory or arguments name %q:\n%s", twin, leak, where)
+			}
+		}
+		for _, name := range []string{"verdict.json", "raw.txt"} {
+			if _, err := os.Stat(filepath.Join(keep, name)); err != nil {
+				t.Errorf("%s: %s not kept: %v", twin, name, err)
+			}
+		}
+		// Only regular files are kept: no directory, and no symlink out of the work directory.
+		for _, name := range []string{"sub", "link"} {
+			if _, err := os.Lstat(filepath.Join(keep, name)); err == nil {
+				t.Errorf("%s: %s was copied to the report", twin, name)
+			}
+		}
+	}
+}
+
+// failInject is a testbed whose defect cannot be injected.
+type failInject struct{ *testbed.Fake }
+
+func (failInject) Inject(context.Context, *casefile.Case, casefile.Twin) error {
+	return errors.New("inject failed")
+}
+
+// A run that ends early stops its watcher and waits for it before copying the files, and does
+// not hang doing so.
+func TestEarlyEndWaitsForTheWatcher(t *testing.T) {
+	tb := failInject{testbed.NewFake(execx.BaseEnv(t.TempDir()))}
+	a := tool(t, "watcher", "echo started > seen.txt\nsleep 30\n")
+	a.Warmup.Duration = 500 * time.Millisecond // time to write seen.txt before the inject fails
+	r := newRunner(t, tb, a)
+	done := make(chan score.Run, 1)
+	go func() { done <- r.twin(context.Background(), testCase(time.Second, time.Second), casefile.TwinDefect) }()
+	select {
+	case run := <-done:
+		if run.Inconclusive != DirtyTestbed {
+			t.Errorf("inconclusive %q, want %q", run.Inconclusive, DirtyTestbed)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the run did not end after the inject failed")
+	}
+	if _, err := os.Stat(filepath.Join(r.cfg.Work, "mesh_t", "defect", "seen.txt")); err != nil {
+		t.Errorf("the watcher's files were not kept: %v", err)
 	}
 }
