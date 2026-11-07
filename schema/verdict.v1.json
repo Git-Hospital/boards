@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Git-Hospital/boards/schema/verdict.v1.json",
+  "title": "boards verdict",
+  "description": "The verdict.json an adapter writes into its work directory (decision D10). Rules a schema cannot express (alarmed agrees with the events, a patch carries a class) are checked by boards when it reads the file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": {"const": "boards.verdict/v1"},
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"}
+      }
+    },
+    "alarmed": {"type": "boolean", "description": "Whether the tool raised anything during the run."},
+    "events": {
+      "description": "When the tool opened and closed alarms; boards measures detection and resolution from these.",
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "type"],
+        "properties": {
+          "at": {"type": "string", "format": "date-time"},
+          "type": {"enum": ["alarm", "resolve"]}
+        }
+      }
+    },
+    "culprits": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "namespace": {"type": "string"},
+          "name": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "ruleIds": {"type": ["array", "null"], "items": {"type": "string"}},
+    "patch": {
+      "description": "The fix the tool proposed, or null. class comes from the adapter's published mapping.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["format"],
+      "properties": {
+        "class": {"type": "string"},
+        "format": {"const": "kubernetes-yaml"},
+        "content": {"type": "string"}
+      }
+    },
+    "measurements": {
+      "description": "A code-track tool's numbers by metric ID; null for a metric means the tool could not measure it.",
+      "type": ["object", "null"],
+      "additionalProperties": {"type": ["number", "null"]}
+    },
+    "prose": {"type": ["string", "null"]},
+    "tokens": {"type": ["integer", "null"], "minimum": 0}
+  }
+}

@@ -3,14 +3,19 @@
 package verdict
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
 	"github.com/Git-Hospital/boards/internal/casefile"
+	"github.com/Git-Hospital/boards/schema"
 )
 
 // SchemaVersion is the only verdict version this boards reads.
@@ -117,11 +122,48 @@ func (v *Verdict) first(kind string, since time.Time) (time.Time, bool) {
 	return best, found
 }
 
-// Read loads and checks a verdict file.
+var (
+	compiled    *jsonschema.Schema
+	compileErr  error
+	compileOnce sync.Once
+)
+
+func verdictSchema() (*jsonschema.Schema, error) {
+	compileOnce.Do(func() {
+		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema.Verdict))
+		if err != nil {
+			compileErr = fmt.Errorf("embedded verdict schema: %w", err)
+			return
+		}
+		c := jsonschema.NewCompiler()
+		c.AssertFormat() // a malformed "at" is the adapter's mistake, not a time boards guesses
+		const url = "https://github.com/Git-Hospital/boards/schema/verdict.v1.json"
+		if err := c.AddResource(url, doc); err != nil {
+			compileErr = err
+			return
+		}
+		compiled, compileErr = c.Compile(url)
+	})
+	return compiled, compileErr
+}
+
+// Read loads a verdict file, checks it against the published schema, and then
+// runs the checks a schema cannot express.
 func Read(path string) (*Verdict, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
+	}
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	sch, err := verdictSchema()
+	if err != nil {
+		return nil, err
+	}
+	if err := sch.Validate(inst); err != nil {
+		return nil, fmt.Errorf("%s: does not match the verdict schema:\n%v", path, err)
 	}
 	var v Verdict
 	if err := json.Unmarshal(raw, &v); err != nil {

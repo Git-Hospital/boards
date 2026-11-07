@@ -173,15 +173,17 @@ The window starts only after the adapter's `warmup` has passed on the same clust
   "schemaVersion": "boards.verdict/v1",
   "tool": {"name": "meshmedic", "version": "1.1.0"},
   "alarmed": true,
-  "firstAlarmAfterSeconds": 63,
+  "events": [{"at": "2026-10-23T12:01:03Z", "type": "alarm"}, {"at": "2026-10-23T12:07:40Z", "type": "resolve"}],
   "culprits": [{"kind": "Deployment", "namespace": "demo", "name": "payments-v2"}],
   "ruleIds": ["error-surge-outlier-ejection"],
-  "patch": {"format": "kubernetes-yaml", "content": "..."},
+  "patch": {"class": "outlier-ejection", "format": "kubernetes-yaml", "content": "..."},
   "measurements": null,
   "prose": null,
   "tokens": null
 }
 ```
+
+`schema/verdict.v1.json` is the published shape, and boards rejects a verdict that does not match it, naming the file: unknown fields, a culprit without `kind` or `name`, a patch in any format but `kubernetes-yaml`, an event time that is not RFC 3339. `events` are the times the tool opened and closed alarms; boards measures time to detect and time to resolve from them against its own clock, and `alarmed` must agree with them. A patch's `class` comes from the adapter's published mapping (D10), never from the tool.
 
 The fields depend on the track and the output kind:
 - The code track fills `measurements`, a map from metric ID to a number or `null`.

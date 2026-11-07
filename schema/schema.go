@@ -8,3 +8,9 @@ import _ "embed"
 //
 //go:embed case.v1.json
 var Case []byte
+
+// Verdict is the JSON Schema for the verdict.json an adapter writes
+// (decision D10).
+//
+//go:embed verdict.v1.json
+var Verdict []byte
