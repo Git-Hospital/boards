@@ -147,17 +147,15 @@ func (a *Adapter) Run(ctx context.Context, inv Invocation) (Outcome, error) {
 		part = strings.ReplaceAll(part, "{{dir}}", a.Dir)
 		argv = append(argv, part)
 	}
-	// Only a dummy gets the case directory: it holds the expected culprits,
-	// the reference fix and the rubric. A real tool gets the case id, the
-	// target and the cluster, as an operator would.
-	caseArg := []string{"--case-id", inv.Case.ID}
-	if a.Category == "dummy" {
-		caseArg = []string{"--case", inv.Case.Dir}
-	}
+	// A real tool gets the target and the cluster, as an operator would, and nothing that names
+	// the case: the case id names the defect and the twin says whether there is one
+	// (architecture §4, #9). Only a dummy gets the case directory and the twin, because
+	// answering from the case file is its job.
 	argv = append(argv, "run")
-	argv = append(argv, caseArg...)
+	if a.Category == "dummy" {
+		argv = append(argv, "--case", inv.Case.Dir, "--twin", string(inv.Twin))
+	}
 	argv = append(argv,
-		"--twin", string(inv.Twin),
 		"--work", inv.Work,
 		"--window", inv.Window.String(),
 	)

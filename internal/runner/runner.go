@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -74,11 +75,40 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	run.Twin = twin
 	r.cfg.Log("%s [%s]", c.ID, twin)
 
-	work := filepath.Join(r.cfg.Work, strings.ReplaceAll(c.ID, "/", "_"), string(twin))
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	// The report keeps each twin's files under work/<case>/<twin>. The tool itself runs in a
+	// fresh temporary directory named after nothing, with a fresh HOME beside it, both outside
+	// the report: neither its paths nor what it can list say which case or twin this is, and it
+	// carries no state from one twin to the next. Its regular files are copied to keep
+	// afterwards, and keep is made only then, so it is not there to be listed during the run
+	// (architecture §4, #9).
+	keep := filepath.Join(r.cfg.Work, strings.ReplaceAll(c.ID, "/", "_"), string(twin))
+	scratch, err := os.MkdirTemp("", "boards-run-")
+	if err != nil {
+		r.cfg.Log("  making the tool's directory: %v", err)
 		run.Inconclusive = DirtyTestbed
 		return run
 	}
+	work, home := filepath.Join(scratch, "work"), filepath.Join(scratch, "home")
+	if err := errors.Join(os.Mkdir(work, 0o755), os.Mkdir(home, 0o700)); err != nil {
+		r.cfg.Log("  making the tool's directory: %v", err)
+		_ = os.RemoveAll(scratch)
+		run.Inconclusive = DirtyTestbed
+		return run
+	}
+	// waitTool is set while a watcher runs: it stops the watcher and waits for it to exit, so the
+	// files are copied after it stopped writing, also when the run ends early.
+	waitTool := func() {}
+	defer func() {
+		waitTool()
+		err := os.MkdirAll(keep, 0o755)
+		if err == nil {
+			err = copyRegularFiles(work, keep)
+		}
+		if err != nil {
+			r.cfg.Log("  keeping the tool's files: %v", err)
+		}
+		_ = os.RemoveAll(scratch)
+	}()
 
 	if err := r.tb.Quiesce(ctx, r.cfg.Quiesce); err != nil {
 		run.Inconclusive = interrupted(ctx, DirtyTestbed)
@@ -106,7 +136,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 	}()
 
 	watcher := r.tool.Mode == "watcher" && c.Track != casefile.TrackCode
-	inv := adapter.Invocation{Case: c, Twin: twin, Work: work, Window: c.Window.Duration, Env: r.tb.Env()}
+	inv := adapter.Invocation{Case: c, Twin: twin, Work: work, Window: c.Window.Duration, Env: withHome(r.tb.Env(), home)}
 
 	// A watcher is started first and given its warm-up on the healthy
 	// testbed, as it would run in production. A one-shot tool is called
@@ -117,6 +147,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 		toolCtx, cancel := context.WithCancel(ctx)
 		stopTool = cancel
 		toolDone = r.start(toolCtx, inv)
+		waitTool = func() { cancel(); <-toolDone }
 		defer cancel()
 		if err := sleep(ctx, r.tool.Warmup.Duration); err != nil {
 			run.Inconclusive = "interrupted"
@@ -204,6 +235,7 @@ func (r *Runner) twin(ctx context.Context, c *casefile.Case, twin casefile.Twin)
 		_ = sleep(ctx, c.Expect.ResolvesWithin.Duration)
 		stopTool()
 		res = <-toolDone
+		waitTool = func() {}
 	}
 	if ctx.Err() != nil && run.Inconclusive == "" {
 		run.Inconclusive = "interrupted"
@@ -407,3 +439,46 @@ func Dirty(c score.Case) bool {
 
 // ErrNoCases is returned when a selection is empty.
 var ErrNoCases = errors.New("no cases selected")
+
+// copyRegularFiles copies the regular files directly in src to dst. Symlinks, directories and
+// other special files a tool leaves are skipped, so a tool cannot point the report at a file
+// outside its work directory.
+func copyRegularFiles(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		errs = append(errs, copyFile(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())))
+	}
+	return errors.Join(errs...)
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	return errors.Join(err, out.Close())
+}
+
+// withHome returns env with HOME set to home, in place of the testbed's.
+func withHome(env []string, home string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "HOME=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, "HOME="+home)
+}
