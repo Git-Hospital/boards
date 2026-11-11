@@ -1,0 +1,217 @@
+{
+  "schemaVersion": "boards.report/v1",
+  "boards": "0.0.0-test",
+  "suite": "fixed",
+  "testbed": {
+    "name": "dry-run",
+    "standard": false,
+    "notes": [
+      "dry run: no cluster"
+    ]
+  },
+  "tool": {
+    "name": "dummy-tool",
+    "version": "1.2.3",
+    "category": "detector",
+    "adapter": "adapters/dummy/tool"
+  },
+  "started": "2026-10-30T08:00:00Z",
+  "finished": "2026-10-30T08:01:30Z",
+  "cases": [
+    {
+      "id": "mesh-all-pass",
+      "track": "mesh",
+      "kind": "fault",
+      "set": "public",
+      "provenance": "incident",
+      "contaminated": false,
+      "axes": {
+        "cleanTwin": {
+          "status": "pass"
+        },
+        "detection": {
+          "status": "pass",
+          "value": 12.5
+        },
+        "diagnosis": {
+          "status": "pass"
+        },
+        "remediation": {
+          "status": "pass"
+        },
+        "resolves": {
+          "status": "pass"
+        }
+      },
+      "runs": []
+    },
+    {
+      "id": "mesh-partial",
+      "track": "mesh",
+      "kind": "fault",
+      "set": "public",
+      "provenance": "synthetic",
+      "contaminated": false,
+      "axes": {
+        "cleanTwin": {
+          "status": "pass"
+        },
+        "detection": {
+          "status": "pass",
+          "value": 40
+        },
+        "diagnosis": {
+          "status": "partial",
+          "reason": "culprit named | quiet neighbour blamed"
+        }
+      },
+      "runs": []
+    },
+    {
+      "id": "mesh-fail",
+      "track": "mesh",
+      "kind": "fault",
+      "set": "holdout",
+      "provenance": "incident",
+      "contaminated": false,
+      "axes": {
+        "cleanTwin": {
+          "status": "fail",
+          "reason": "alarm on the clean twin"
+        },
+        "detection": {
+          "status": "fail",
+          "reason": "no alarm within 5m0s"
+        },
+        "diagnosis": {
+          "status": "fail",
+          "reason": "no alarm"
+        }
+      },
+      "runs": []
+    },
+    {
+      "id": "mesh-null-axis",
+      "track": "mesh",
+      "kind": "fault",
+      "set": "public",
+      "provenance": "incident",
+      "contaminated": false,
+      "axes": {
+        "detection": {
+          "status": "pass",
+          "value": 3
+        },
+        "nullHonesty": {
+          "status": "pass"
+        },
+        "remediation": {
+          "status": "null",
+          "reason": "tool proposes no fixes"
+        }
+      },
+      "runs": []
+    },
+    {
+      "id": "mesh-contaminated",
+      "track": "mesh",
+      "kind": "fault",
+      "set": "public",
+      "provenance": "incident",
+      "contaminated": true,
+      "axes": {
+        "detection": {
+          "status": "pass",
+          "value": 8
+        },
+        "diagnosis": {
+          "status": "fail",
+          "reason": "wrong culprit"
+        }
+      },
+      "runs": []
+    },
+    {
+      "id": "mesh-inconclusive",
+      "track": "mesh",
+      "kind": "fault",
+      "set": "public",
+      "provenance": "incident",
+      "contaminated": false,
+      "inconclusive": "the defect never went live",
+      "axes": {},
+      "runs": []
+    }
+  ],
+  "summary": {
+    "clean": {
+      "cleanTwin": {
+        "n": 3,
+        "pass": 2,
+        "partial": 0,
+        "fail": 1,
+        "null": 0,
+        "rate": 0.6666666666666666
+      },
+      "detection": {
+        "n": 4,
+        "pass": 3,
+        "partial": 0,
+        "fail": 1,
+        "null": 0,
+        "rate": 0.75
+      },
+      "diagnosis": {
+        "n": 3,
+        "pass": 1,
+        "partial": 1,
+        "fail": 1,
+        "null": 0,
+        "rate": 0.3333333333333333
+      },
+      "nullHonesty": {
+        "n": 1,
+        "pass": 1,
+        "partial": 0,
+        "fail": 0,
+        "null": 0,
+        "rate": 1
+      },
+      "remediation": {
+        "n": 1,
+        "pass": 1,
+        "partial": 0,
+        "fail": 0,
+        "null": 1,
+        "rate": 1
+      },
+      "resolves": {
+        "n": 1,
+        "pass": 1,
+        "partial": 0,
+        "fail": 0,
+        "null": 0,
+        "rate": 1
+      }
+    },
+    "contaminated": {
+      "detection": {
+        "n": 1,
+        "pass": 1,
+        "partial": 0,
+        "fail": 0,
+        "null": 0,
+        "rate": 1
+      },
+      "diagnosis": {
+        "n": 1,
+        "pass": 0,
+        "partial": 0,
+        "fail": 1,
+        "null": 0,
+        "rate": 0
+      }
+    },
+    "inconclusive": 1
+  }
+}
