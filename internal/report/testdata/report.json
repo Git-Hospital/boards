@@ -43,7 +43,49 @@
           "status": "pass"
         }
       },
-      "runs": []
+      "runs": [
+        {
+          "twin": "defect",
+          "exitCode": 0,
+          "injectedAt": "2026-10-30T09:01:00Z",
+          "detectFrom": "2026-10-30T09:01:30Z",
+          "defectEndedAt": "2026-10-30T09:06:30Z",
+          "patch": {
+            "class": "config",
+            "format": "kubernetes-yaml",
+            "content": "kind: DestinationRule\n"
+          },
+          "remedy": {
+            "applied": true,
+            "appliedAt": "2026-10-30T09:02:10Z",
+            "healed": true,
+            "healedAt": "2026-10-30T09:02:40Z",
+            "cleanOk": true,
+            "removed": true
+          },
+          "cost": {
+            "wallSeconds": 330.5,
+            "objectsCreated": [
+              "DestinationRule/mesh/reviews"
+            ],
+            "objectsDeleted": [],
+            "tokens": 1200
+          }
+        },
+        {
+          "twin": "clean",
+          "exitCode": 0,
+          "injectedAt": "2026-10-30T09:07:00Z",
+          "detectFrom": "2026-10-30T09:07:30Z",
+          "defectEndedAt": "2026-10-30T09:12:30Z",
+          "cost": {
+            "wallSeconds": 300,
+            "objectsCreated": [],
+            "objectsDeleted": [],
+            "tokens": null
+          }
+        }
+      ]
     },
     {
       "id": "mesh-partial",

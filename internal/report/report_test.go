@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/Git-Hospital/boards/internal/adapter"
+	"github.com/Git-Hospital/boards/internal/casefile"
 	"github.com/Git-Hospital/boards/internal/score"
 	"github.com/Git-Hospital/boards/internal/testbed"
+	"github.com/Git-Hospital/boards/internal/verdict"
 )
 
 // Architecture section 8: report.json and the Markdown for a fixed run are
@@ -23,6 +25,11 @@ import (
 //	UPDATE_GOLDEN=1 go test ./internal/report/
 
 func value(f float64) *float64 { return &f }
+
+func intPtr(i int) *int { return &i }
+
+// at is a time on the day of the fixed run, in UTC.
+func at(h, m, sec int) time.Time { return time.Date(2026, 10, 30, h, m, sec, 0, time.UTC) }
 
 // fixedCases is one case of each kind a report has to show: every axis
 // passing, a partial, a fail with its reason, a null axis with its reason, a
@@ -38,7 +45,41 @@ func fixedCases() []score.Case {
 				score.Resolves:    {Status: score.Pass},
 				score.CleanTwin:   {Status: score.Pass},
 			},
-			Runs: []score.Run{},
+			// Two runs, the defect twin and then the clean one, so the per-run
+			// fields and their order in report.json are in a golden file too
+			// (review of #25).
+			Runs: []score.Run{
+				{
+					Twin:          casefile.TwinDefect,
+					ExitCode:      0,
+					InjectedAt:    at(9, 1, 0),
+					DetectFrom:    at(9, 1, 30),
+					DefectEndedAt: at(9, 6, 30),
+					Patch:         &verdict.Patch{Class: "config", Format: "kubernetes-yaml", Content: "kind: DestinationRule\n"},
+					Remedy: &score.Remedy{
+						Applied: true, AppliedAt: at(9, 2, 10), Healed: true, HealedAt: at(9, 2, 40),
+						CleanOK: true, Removed: true,
+					},
+					Cost: score.Cost{
+						WallSeconds:    330.5,
+						ObjectsCreated: []string{"DestinationRule/mesh/reviews"},
+						ObjectsDeleted: []string{},
+						Tokens:         intPtr(1200),
+					},
+				},
+				{
+					Twin:          casefile.TwinClean,
+					ExitCode:      0,
+					InjectedAt:    at(9, 7, 0),
+					DetectFrom:    at(9, 7, 30),
+					DefectEndedAt: at(9, 12, 30),
+					Cost: score.Cost{
+						WallSeconds:    300,
+						ObjectsCreated: []string{},
+						ObjectsDeleted: []string{},
+					},
+				},
+			},
 		},
 		{
 			ID: "mesh-partial", Track: "mesh", Kind: "fault", Set: "public", Provenance: "synthetic",
