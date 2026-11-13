@@ -1,0 +1,11 @@
+CASE                DETECTION  DIAGNOSIS  REMEDIATION  RESOLVES  CLEANTWIN  NULLHONESTY
+mesh-all-pass       pass       pass       pass         pass      pass       -
+mesh-partial        pass       partial    -            -         pass       -
+mesh-fail           fail       fail       -            -         fail       -
+mesh-null-axis      pass       -          null         -         -          pass
+mesh-contaminated*  pass       fail       -            -         -          -
+mesh-inconclusive   -          -          -            -         -          -
+
+detection 75% (n=4, null=0); diagnosis 33% (n=3, null=0); remediation 100% (n=1, null=1); resolves 100% (n=1, null=0); cleanTwin 67% (n=3, null=0); nullHonesty 100% (n=1, null=0)
+* contaminated for this tool: summarised separately
+testbed dry-run is not standard: this result never enters the official table
