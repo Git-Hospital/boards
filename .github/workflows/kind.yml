@@ -11,6 +11,9 @@ on:
       cases:
         description: "space-separated case ids"
         default: "mesh/error-surge mesh/noise-only mesh/mtls-conflict"
+      adapter:
+        description: "adapter directory under adapters/ (a real one needs its tool on the runner)"
+        default: "adapters/dummy/oracle"
 
 permissions:
   contents: read
@@ -21,6 +24,7 @@ jobs:
     timeout-minutes: 120
     env:
       CASES: ${{ inputs.cases || 'mesh/error-surge mesh/noise-only mesh/mtls-conflict' }}
+      ADAPTER: ${{ inputs.adapter || 'adapters/dummy/oracle' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -38,11 +42,22 @@ jobs:
           chmod +x "$HOME/bin/"*
           echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: go build -o boards ./cmd/boards
-      - name: oracle dummy on the live testbed
+      - name: adapter on the live testbed
         run: |
+          set -euo pipefail
+          case "$ADAPTER" in
+            adapters/*) ;;
+            *) echo "adapter must be a directory under adapters/" >&2; exit 1 ;;
+          esac
+          case "$ADAPTER" in
+            *..*|*[!A-Za-z0-9._/-]*) echo "adapter path has characters that are not allowed" >&2; exit 1 ;;
+          esac
+          if [ ! -f "$ADAPTER/adapter.yaml" ]; then
+            echo "$ADAPTER has no adapter.yaml" >&2; exit 1
+          fi
           args=()
           for c in $CASES; do args+=(--case "$c"); done
-          ./boards run --adapter adapters/dummy/oracle --track mesh "${args[@]}" --quiesce 60s --out out
+          ./boards run --adapter "$ADAPTER" --track mesh "${args[@]}" --quiesce 60s --out out
       - uses: actions/upload-artifact@v4
         if: always()
         with:
