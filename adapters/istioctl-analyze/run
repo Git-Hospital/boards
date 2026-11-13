@@ -20,8 +20,16 @@ stdout is a JSON array with one object per message: code, level, origin
   - ruleIds: the `code` of each Error or Warning element, once each.
   - events: one alarm at the time `istioctl analyze` returned; no resolve.
 
-The timeout on `istioctl analyze` is derived from --window. On a timeout the
-partial output is kept and the adapter fails without a verdict.
+istioctl's stdout goes to analyze.json in the work directory and its stderr
+goes straight through, so when boards terminates a hung run, what istioctl
+printed so far is already on disk and in raw.txt, and no verdict exists. After
+istioctl exits, its stdout is also printed, so raw.txt holds both streams. The
+verdict is written before `istioctl version` is asked (version "unknown"), and
+rewritten with the version if that answers within a few seconds.
+
+Failures, each logged with its own reason: stdout that is not a JSON array, an
+element that is not an object, a level other than Error, Warning or Info, an
+exit code other than 0 or 79, a missing binary.
 
 Only the standard library is used.
 """
@@ -44,26 +52,9 @@ def log(msg):
     print("boards-adapter: " + msg, file=sys.stderr, flush=True)
 
 
-def window_seconds(text):
-    """Seconds in a Go duration such as 1m0s, 90s or 1h30m; None if unreadable."""
-    units = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001, "us": 1e-6, "\u00b5s": 1e-6, "ns": 1e-9}
-    if not re.fullmatch(r"(\d+(\.\d+)?(h|ms|us|\u00b5s|ns|m|s))+", text):
-        return None
-    return sum(float(n) * units[u] for n, _, u in re.findall(r"(\d+(\.\d+)?)(h|ms|us|\u00b5s|ns|m|s)", text))
-
-
-def analyze_timeout(window):
-    secs = window_seconds(window)
-    if secs is None or secs <= 0:
-        return None
-    # A small margin under the window, so the adapter can report before boards
-    # gives up on it.
-    return max(secs - 10.0, secs * 0.8)
-
-
 def tool_version(binary):
     try:
-        out = subprocess.run([binary, "version", "--remote=false"], capture_output=True, text=True, timeout=30).stdout
+        out = subprocess.run([binary, "version", "--remote=false"], capture_output=True, text=True, timeout=5).stdout
     except (OSError, subprocess.TimeoutExpired) as err:
         log("istioctl version: %s" % err)
         return "unknown"
@@ -109,31 +100,41 @@ def main():
         return 2
 
     binary = "istioctl"
+    # --window is accepted and not used: boards enforces the budget itself.
+    out_path = os.path.join(args.work, "analyze.json")
     try:
-        # KUBECONFIG comes from the environment boards built.
-        res = subprocess.run([binary, "analyze", "-n", ns, "-o", "json"], capture_output=True,
-                             timeout=analyze_timeout(args.window))
-    except subprocess.TimeoutExpired as err:
-        emit(err.stdout, err.stderr)
-        log("istioctl analyze timed out after %ss; no verdict" % err.timeout)
-        return 1
+        with open(out_path, "wb") as out:
+            # KUBECONFIG comes from the environment boards built. stderr is
+            # inherited, so it reaches raw.txt as it is written.
+            res = subprocess.run([binary, "analyze", "-n", ns, "-o", "json"], stdout=out)
     except OSError as err:
-        log("istioctl analyze: %s" % err)
+        log("istioctl analyze could not run: %s" % err)
         return 1
-    at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    emit(res.stdout, res.stderr)
+    # Sub-second precision, so the time cannot fall before boards' inject time.
+    at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    with open(out_path, "rb") as f:
+        stdout = f.read()
+    sys.stdout.write(stdout.decode("utf-8", "replace"))
+    sys.stdout.flush()
 
+    if res.returncode not in OK_EXITS:
+        log("istioctl analyze exited %d, want 0 or 79: a tool failure, not a clean bill" % res.returncode)
+        return 1
     try:
-        messages = json.loads(res.stdout)
+        messages = json.loads(stdout)
     except ValueError:
-        messages = None
-    if res.returncode not in OK_EXITS or not isinstance(messages, list) or not all(
-            isinstance(m, dict) and m.get("level") in LEVELS for m in messages):
-        log("istioctl analyze exited %d without a JSON array of messages: a tool failure, not a clean bill" % res.returncode)
+        log("istioctl analyze stdout is not JSON: a tool failure, not a clean bill")
         return 1
-
-    # After the analysis, so that the version call is not charged to detection.
-    version = tool_version(binary)
+    if not isinstance(messages, list):
+        log("istioctl analyze stdout is JSON but not an array: a tool failure, not a clean bill")
+        return 1
+    for m in messages:
+        if not isinstance(m, dict):
+            log("istioctl analyze printed an element that is not an object: a tool failure, not a clean bill")
+            return 1
+        if m.get("level") not in LEVELS:
+            log("istioctl analyze printed level %r, want Error, Warning or Info: a tool failure, not a clean bill" % (m.get("level"),))
+            return 1
 
     alarming = [m for m in messages if m["level"] in ALARMING]
     culprits, rules = [], []
@@ -144,9 +145,9 @@ def main():
         code = m.get("code")
         if isinstance(code, str) and code and code not in rules:
             rules.append(code)
-    write_verdict(args.work, {
+    verdict = {
         "schemaVersion": "boards.verdict/v1",
-        "tool": {"name": "istioctl-analyze", "version": version},
+        "tool": {"name": "istioctl-analyze", "version": "unknown"},
         "alarmed": bool(alarming),
         "events": [{"at": at, "type": "alarm"}] if alarming else [],
         "culprits": culprits,
@@ -155,7 +156,13 @@ def main():
         "measurements": {},
         "prose": None,
         "tokens": None,
-    })
+    }
+    write_verdict(args.work, verdict)
+    # Asked only now, so a slow or hung version call cannot cost the verdict.
+    version = tool_version(binary)
+    if version != "unknown":
+        verdict["tool"]["version"] = version
+        write_verdict(args.work, verdict)
     return 0
 
 

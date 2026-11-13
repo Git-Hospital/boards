@@ -13,12 +13,15 @@ needsLLM: false
 alarm: >-
   an alarm when `istioctl analyze -n <target namespace> -o json` prints at
   least one message of level Error or Warning, even if its origin is missing;
-  messages of level Info never alarm, and there is no resolve (one-shot). A
-  result needs stdout that is a JSON array and exit code 0 or 79; any other
-  outcome (a timeout included) is a tool failure with no verdict
+  messages of level Info never alarm, and there is no resolve (one-shot). The
+  alarm is stamped when istioctl returns. A result needs stdout that is a JSON
+  array of objects, each with level Error, Warning or Info, and exit code 0 or
+  79. Anything else is a tool failure with no verdict: stdout that is not a
+  JSON array, an element that is not an object, any other level, any other
+  exit code, a missing binary, or a run that boards terminates
 culprits: >-
   the `origin` of each Error and Warning message when it is exactly
   `Kind namespace/name`, once each; any other origin (missing, cluster-scoped,
   unparsable) contributes no culprit, and none are inferred from the message
-  text
+  text. The rule ids are the `code` of each Error and Warning message
 command: ["{{dir}}/run"]

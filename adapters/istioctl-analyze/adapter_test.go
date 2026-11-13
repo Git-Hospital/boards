@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,7 +21,11 @@ import (
 // recording: stdout, stderr and exit code from the directory in FAKE_REC.
 const fakeIstioctl = `#!/bin/sh
 echo "$*" >> "$FAKE_LOG"
-if [ "$1" = version ]; then echo "client version: 9.9.1"; exit 0; fi
+if [ "$1" = version ]; then
+  [ -n "$FAKE_VERSION_HANG" ] && exec sleep 60
+  [ -n "$FAKE_VERSION_FAIL" ] && exit 1
+  echo "client version: 9.9.1"; exit 0
+fi
 if [ -n "$FAKE_HANG" ]; then echo partial-out; echo partial-err >&2; exec sleep 60; fi
 cat "$FAKE_REC.stdout"
 cat "$FAKE_REC.stderr" >&2
@@ -49,11 +54,15 @@ type result struct {
 	raw  string
 	exit int
 	log  []string
+	work string
+	out  adapter.Outcome
 }
 
-func run(t *testing.T, recording string) result { return runWith(t, recording, false, time.Minute) }
+func run(t *testing.T, recording string) result { return runWith(t, recording, "", 25*time.Second) }
 
-func runWith(t *testing.T, recording string, hang bool, window time.Duration) result {
+// runWith sets one FAKE_* switch (FAKE_HANG, FAKE_VERSION_HANG, FAKE_VERSION_FAIL)
+// and gives the adapter that long before boards terminates it.
+func runWith(t *testing.T, recording string, switchOn string, budget time.Duration) result {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not on PATH")
@@ -71,11 +80,11 @@ func runWith(t *testing.T, recording string, hang bool, window time.Duration) re
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.Secrets = append(a.Secrets, "FAKE_REC", "FAKE_LOG", "FAKE_HANG")
+	a.Secrets = append(a.Secrets, "FAKE_REC", "FAKE_LOG", "FAKE_HANG", "FAKE_VERSION_HANG", "FAKE_VERSION_FAIL")
 	t.Setenv("FAKE_REC", recording)
 	t.Setenv("FAKE_LOG", logFile)
-	if hang {
-		t.Setenv("FAKE_HANG", "1")
+	if switchOn != "" {
+		t.Setenv(switchOn, "1")
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -84,7 +93,7 @@ func runWith(t *testing.T, recording string, hang bool, window time.Duration) re
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	out, err := a.Run(ctx, adapter.Invocation{
-		Case: c, Twin: casefile.TwinDefect, Work: work, Window: window, Budget: 25 * time.Second,
+		Case: c, Twin: casefile.TwinDefect, Work: work, Window: time.Minute, Budget: budget,
 		Env: execx.BaseEnv(t.TempDir()),
 	})
 	if err != nil {
@@ -93,7 +102,7 @@ func runWith(t *testing.T, recording string, hang bool, window time.Duration) re
 	raw, _ := os.ReadFile(filepath.Join(work, "raw.txt"))
 	logged, _ := os.ReadFile(logFile)
 	v, verr := verdict.Read(filepath.Join(work, verdict.FileName))
-	return result{v: v, err: verr, raw: string(raw), exit: out.ExitCode, log: strings.Split(strings.TrimSpace(string(logged)), "\n")}
+	return result{v: v, err: verr, raw: string(raw), exit: out.ExitCode, log: strings.Split(strings.TrimSpace(string(logged)), "\n"), work: work, out: out}
 }
 
 func (r result) mustVerdict(t *testing.T) *verdict.Verdict {
@@ -195,6 +204,7 @@ func TestToolFailuresWriteNoVerdict(t *testing.T) {
 		"garbage stdout":                       writeRec(t, "Error: something broke\n", 0),
 		"empty stdout":                         writeRec(t, "", 0),
 		"not an array":                         writeRec(t, `{"level":"Error"}`, 0),
+		"element not an object":                writeRec(t, `[1]`, 0),
 		"unknown level":                        writeRec(t, `[{"level":"Fatal","origin":"A b/c"}]`, 0),
 		"valid JSON, exit 1":                   writeRec(t, `[]`, 1),
 	}
@@ -212,13 +222,49 @@ func TestToolFailuresWriteNoVerdict(t *testing.T) {
 	}
 }
 
-func TestHangIsATimeoutWithPartialOutputKept(t *testing.T) {
-	r := runWith(t, rec("clean"), true, 3*time.Second) // timeout 0.8 * 3s
-	if r.err == nil || r.exit == 0 {
-		t.Errorf("verdict err %v exit %d, want a failure", r.err, r.exit)
+func TestTerminatedDuringAHangKeepsPartialOutputAndWritesNoVerdict(t *testing.T) {
+	// boards ends a one-shot tool at its budget: SIGTERM to the process group.
+	r := runWith(t, rec("clean"), "FAKE_HANG", 2*time.Second)
+	if !r.out.TimedOut {
+		t.Errorf("outcome %+v, want a timeout as boards sees it", r.out)
 	}
-	if !strings.Contains(r.raw, "partial-out") || !strings.Contains(r.raw, "partial-err") {
-		t.Errorf("partial output not kept:\n%s", r.raw)
+	if r.err == nil {
+		t.Errorf("a verdict was written: %+v", r.v)
+	}
+	if !strings.Contains(r.raw, "partial-err") {
+		t.Errorf("istioctl's stderr is not in raw.txt:\n%s", r.raw)
+	}
+	kept, _ := os.ReadFile(filepath.Join(r.work, "analyze.json"))
+	if !strings.Contains(string(kept), "partial-out") {
+		t.Errorf("istioctl's partial stdout is not kept in the work directory: %q", kept)
+	}
+}
+
+func TestVerdictSurvivesAHungOrFailedVersionCall(t *testing.T) {
+	for _, sw := range []string{"FAKE_VERSION_FAIL", "FAKE_VERSION_HANG"} {
+		// The hang case outlasts the adapter's 5s version timeout, not boards' budget.
+		r := runWith(t, rec("ist0101"), sw, 25*time.Second)
+		v := r.mustVerdict(t)
+		if !v.Alarmed || v.Tool.Version != "unknown" || r.exit != 0 {
+			t.Errorf("%s: alarmed %v version %q exit %d", sw, v.Alarmed, v.Tool.Version, r.exit)
+		}
+	}
+	// Terminated while the version call hangs: the first verdict stands.
+	r := runWith(t, rec("ist0101"), "FAKE_VERSION_HANG", 2*time.Second)
+	if v := r.mustVerdict(t); !v.Alarmed || v.Tool.Version != "unknown" {
+		t.Errorf("verdict after termination: %+v", v)
+	}
+}
+
+func TestAlarmTimeHasSubSecondPrecision(t *testing.T) {
+	r := run(t, rec("ist0101"))
+	r.mustVerdict(t) // parses through the schema and internal/verdict
+	raw, err := os.ReadFile(filepath.Join(r.work, verdict.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`"at": "\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z"`).Match(raw) {
+		t.Errorf("alarm time is not RFC 3339 with fractional seconds, UTC:\n%s", raw)
 	}
 }
 
