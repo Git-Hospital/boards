@@ -20,7 +20,7 @@ The Istio group of [samber/awesome-prometheus-alerts](https://github.com/samber/
 
 The file is already a Prometheus rule file (`groups:` with `alert:`, `expr:`, `for:`), so no conversion is needed. The project's own source is `_data/rules.yml`, a data format that is not a rule file; the `dist/` file is generated from it. The file's blob is byte-identical at the later commit `4b14ccb79cb8a9dc44f153766777031849e78c0e` (the head of `master` when checked, 2026-11-13); it was last changed by commit `549dd0175a45c53e3ff15b4a549f7d9358d2e9f3` (2026-09-07). The adapter downloads the file from the URL above and refuses to run if the SHA-256 differs. The file is not copied into this repository in this change.
 
-Attribution, as CC BY 4.0 requires: the rules are from [samber/awesome-prometheus-alerts](https://github.com/samber/awesome-prometheus-alerts), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), used here without changes. A report that uses this baseline repeats this notice.
+Attribution, as CC BY 4.0 requires. The upstream LICENSE at the pinned commit names no copyright holder; it only states the dual licence. The notice is therefore: rules from samber/awesome-prometheus-alerts (https://github.com/samber/awesome-prometheus-alerts) at commit e23e8777432ee8c0851c292ce6198e72586046cc, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), used without changes. A vendored copy of the file carries this notice next to it, and a report that uses this baseline repeats it.
 
 The eleven rules, by `alert:` name and what each reads:
 
@@ -41,13 +41,13 @@ The eleven rules, by `alert:` name and what each reads:
 ## Why this set
 
 - It was not written by us. Nobody on this project can tune it, which is the requirement in question 4.
-- It is the only published Istio rule set we found that ships as a ready Prometheus rule file under a licence that allows reuse with attribution.
+- Of the sets we found, its request rules use `for:` of 1 to 2 minutes, which fits case windows of 5 to 8 minutes. It also ships as a ready Prometheus rule file under a licence that allows reuse with attribution. It is widely used; we did not record a star count.
 - Pinning by commit and SHA-256 makes a later upstream edit visible: the adapter stops instead of silently running different rules.
 - Using all eleven rules unmodified keeps the choice of rules out of our hands. Dropping the rules that cannot fire here would be a choice, and it would flatter or handicap the baseline.
 
 ## Considered and rejected
 
-- **Istio-2 mixin from Grafana ([grafana/jsonnet-libs `istio-2-mixin`](https://github.com/grafana/jsonnet-libs/tree/cd5bb6f/istio-2-mixin), commit `cd5bb6fca4015294d4dfda1014a1386c447241b7`).** Apache-2.0 ([LICENSE](https://github.com/grafana/jsonnet-libs/blob/cd5bb6f/LICENSE)), seven alerts in [`prometheus_alerts.yaml`](https://github.com/grafana/jsonnet-libs/blob/cd5bb6f/istio-2-mixin/prometheus_rules_out/prometheus_alerts.yaml). Its request alerts (latency, HTTP errors, gRPC errors) filter `reporter="source"`, use `increase(...[5m])` and `for: 5m`. The testbed's waypoint reports `reporter="waypoint"` (every case oracle under `cases/mesh/` filters on it), so those alerts would not see waypoint traffic. A `5m` window plus `for: 5m` needs about 10 minutes to fire, while the cases give 5 to 8 minutes after a 90 s to 2 minute settle. Rejected because the rules would be blind and slow on this testbed by construction, not because they are worse rules.
+- **Istio-2 mixin from Grafana ([grafana/jsonnet-libs `istio-2-mixin`](https://github.com/grafana/jsonnet-libs/tree/cd5bb6f/istio-2-mixin), commit `cd5bb6fca4015294d4dfda1014a1386c447241b7`).** Apache-2.0 ([LICENSE](https://github.com/grafana/jsonnet-libs/blob/cd5bb6f/LICENSE)), seven alerts in [`prometheus_alerts.yaml`](https://github.com/grafana/jsonnet-libs/blob/cd5bb6f/istio-2-mixin/prometheus_rules_out/prometheus_alerts.yaml). Its request alerts (latency, HTTP errors, gRPC errors) filter `reporter="source"`, use `increase(...[5m])` and `for: 5m`. The testbed's waypoint reports `reporter="waypoint"` (every case oracle under `cases/mesh/` filters on it), so those alerts would not see waypoint traffic. The ingress gateway's Envoy may report `reporter="source"` (unverified), so only gateway traffic may reach them. A `5m` window plus `for: 5m` can take up to about 10 minutes to fire (a ratio over `increase(...[5m])` can cross its threshold sooner), while the cases give 5 to 8 minutes after a 90 s to 2 minute settle. Rejected because the request rules would most likely not see the waypoint traffic and are likely slow against these windows, not because they are worse rules.
 - **An adapted rule set** (for example rewriting `reporter=` to `waypoint`, or shortening windows). Rejected because the adapted rules would be written by us, which is what question 4 forbids.
 - **Rules published by Istio, Kiali, kube-prometheus or the prometheus-community Helm charts.** We found none. A code search of those projects returned no Istio alert rules. This is a weak check and not proof that none exist.
 
@@ -55,7 +55,7 @@ The eleven rules, by `alert:` name and what each reads:
 
 The pinned file is loaded unmodified into a Prometheus that evaluates it against the testbed's metrics. The tool has alarmed when any rule of the set is `firing` inside the case window. The adapter reads this from the Prometheus [alerts API](https://prometheus.io/docs/prometheus/latest/querying/api/#alerts) (`/api/v1/alerts`) or the [rules API](https://prometheus.io/docs/prometheus/latest/querying/api/#rules) (`/api/v1/rules`). A rule that is only `pending` has not alarmed. The alert times become the `events` in the verdict, so time to detect is measured against boards' own clock.
 
-Culprits: the workload named by a firing alert's own labels, when the rule keeps such labels, and none otherwise. Nothing is inferred (D10). In the pinned file only `IstioLatency99Percentile` keeps useful labels (`destination_canonical_service`, `destination_workload_namespace`); the others aggregate with `sum(...)` and keep none. A canonical service name is not a Deployment name, so whether it counts as a named workload belongs to the adapter's `culprits` mapping, which is frozen per suite and offered to the rules' maintainers for review (D10).
+Culprits: the workload named by a firing alert's own labels, when the rule keeps such labels, and none otherwise. Nothing is inferred (D10). In the pinned file the rules differ. `IstioLatency99Percentile` keeps `destination_canonical_service` and `destination_workload_namespace`. `IstioHighRequestLatency` has no aggregation, so it keeps the labels of the series it reads (including workload labels), but it only reads `reporter="destination"`. `IstioKubernetesGatewayAvailabilityDrop` uses `min(...) without (instance, pod)`, so it keeps the deployment's other labels. The remaining rules aggregate with `sum(...)` and keep none, or (`IstioControlPlaneComponentDown`, `absent(...)`) keep only the labels of the matcher. A canonical service name is not a Deployment name, so whether it counts as a named workload belongs to the adapter's `culprits` mapping, which is frozen per suite and offered to the rules' maintainers for review (D10).
 
 Left to the adapter's own pull request:
 
@@ -63,9 +63,9 @@ Left to the adapter's own pull request:
 - The `adapter.yaml` fields (`alarm`, `culprits`, `warmup`). The rules use `[5m]` windows, so `warmup` must cover at least that.
 - Evaluation interval: the vendored config sets `evaluation_interval: 1m` (line 41). A rule with `for: 1m` can take up to about two evaluations to fire. Whether the baseline's Prometheus keeps 1m is the adapter's choice, and it changes time to detect.
 
-## What the rules could detect on the testbed
+## Which rule reads each fault on the testbed
 
-The testbed runs Istio 1.24.1 in ambient mode. A waypoint is applied to namespace `demo` ([`internal/testbed/kind.go`](../internal/testbed/kind.go), step "waypoint": `istioctl waypoint apply -n demo --enroll-namespace`), and the case oracles read `reporter="waypoint"`. Only `demo-sidecar` ([`sidecar-orders.yaml`](../testbed/mesh/app/sidecar-orders.yaml)) runs sidecars, and it reports `reporter=destination`. No case injects a fault there.
+The testbed runs Istio 1.24.1 in ambient mode. A waypoint is applied to namespace `demo` ([`internal/testbed/kind.go`](../internal/testbed/kind.go), step "waypoint": `istioctl waypoint apply -n demo --enroll-namespace`), and the case oracles read `reporter="waypoint"`. Namespace `demo-sidecar` ([`sidecar-orders.yaml`](../testbed/mesh/app/sidecar-orders.yaml)) runs sidecars and reports `reporter=destination`. No case injects a fault there. The north-south ingress gateway ([`ingress.yaml`](../testbed/mesh/app/ingress.yaml), Gateway `ingress`, driven by `ingress-loadgen`) is also an Envoy that emits request metrics. Its `reporter` value is unverified here. `IstioLatency99Percentile` has no `reporter` filter, so it reads those series too.
 
 All entries below are derived from reading the rules and the case files. None is measured.
 
@@ -83,7 +83,9 @@ All entries below are derived from reading the rules and the case files. None is
 | `pool-overflow` | `response_flags="UO"`, no `reporter` filter | `IstioLatency99Percentile` only if queueing pushes the p99 over 1000 ms; reading cannot settle that. The 5xx rule does not see the waypoint's rejections. |
 | `route-timeout-too-short` | `response_flags="UT"`, waypoint | None. The 504s are waypoint series, and the requests time out at 10 ms, so no latency rule fires. |
 
-Summary of the derived reading: at most two of the ten fault cases (`canary-latency`, and `pool-overflow` conditionally) can be detected, both by one rule. The expected weakness is the design of the rules, not a handicap added by the adapter: five of the eleven rules filter `reporter="destination"`, which the waypoint does not produce.
+Summary of the derived reading: the expression of at most one rule reads the fault in at most two of the ten fault cases (`canary-latency`, and `pool-overflow` conditionally). This says which rule's expression reflects each fault, not the scored outcome. The expected weakness is the design of the rules, not a handicap added by the adapter: five of the eleven rules filter `reporter="destination"`, which the waypoint does not produce.
+
+The scored outcome can differ from the table. An alarm is any rule `firing` in the window, and an alarm before the defect is observable counts as immediate (architecture section 5). If `IstioLowTotalRequestRate` fires throughout, as expected (derived, unmeasured), every fault twin counts as alarmed, every clean twin as a false alarm, and nothing resolves. The same holds for `IstioControlPlaneComponentDown` if istiod is not scraped. The report therefore shows the baseline per rule as well as for the whole set, so one noisy rule is visible. The alarm definition stays: any rule firing.
 
 Expected behaviour of the other rules on a testbed with no fault. Derived from reading, unmeasured:
 
