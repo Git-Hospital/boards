@@ -182,7 +182,7 @@ func rank(s score.Status) int {
 	case score.Fail:
 		return 1
 	}
-	return 0 // null: not comparable, never a regression on its own
+	return 0 // null ranks below fail, so a drop to null is a regression; null to anything is not.
 }
 
 // axesIn returns the axes that occur in the cases, in report order.
