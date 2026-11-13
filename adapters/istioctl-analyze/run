@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""boards adapter for `istioctl analyze` (https://istio.io/latest/docs/ops/diagnostic-tools/istioctl-analyze/).
+
+Runs `istioctl analyze -n $BOARDS_TARGET_NAMESPACE` once and writes
+verdict.json from its text output. The mapping is fixed here and stated in
+adapter.yaml (D10); it reads what istioctl printed and adds nothing.
+
+Output lines look like (recorded in results/istioctl-analyze.md):
+
+    Error [IST0101] (VirtualService demo/payments) Referenced host+subset ...
+
+An alarm is any Error or Warning line; Info lines never alarm. Culprits are
+the objects those lines name, once each. `istioctl analyze` exits nonzero when
+it finds issues, so the exit code alone says nothing: output with messages, or
+with "No validation issues found", is a result. Anything else is a tool
+failure: no verdict.json is written and the exit code is nonzero, so boards
+records a missing verdict instead of a clean bill.
+
+Only the standard library is used.
+"""
+
+import argparse
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+MESSAGE = re.compile(r"^(Error|Warning|Info) \[(IST\d+)\] \((\S+) ([^)\s]+)\) ")
+CLEAN = "No validation issues found"
+
+
+def log(msg):
+    print("boards-adapter: " + msg, file=sys.stderr, flush=True)
+
+
+def tool_version(binary):
+    try:
+        out = subprocess.run([binary, "version", "--remote=false"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.TimeoutExpired) as err:
+        log("istioctl version: %s" % err)
+        return "unknown"
+    m = re.search(r"\d+\.\d+\.\d+\S*", out)
+    return m.group(0) if m else "unknown"
+
+
+def parse(text):
+    """Returns the (level, rule, kind, ref) of each message line."""
+    found = []
+    for line in text.splitlines():
+        m = MESSAGE.match(line)
+        if m:
+            found.append(m.groups())
+    return found
+
+
+def culprit(kind, ref):
+    # A namespaced object is "namespace/name". Anything else (a cluster-scoped
+    # object, or a form this adapter has not been taught) names no culprit.
+    ns, sep, name = ref.partition("/")
+    if sep and ns and name and "/" not in name:
+        return {"kind": kind, "namespace": ns, "name": name}
+    return None
+
+
+def write_verdict(work, v):
+    fd, tmp = tempfile.mkstemp(dir=work, prefix=".verdict-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(v, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, os.path.join(work, "verdict.json"))
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("command", choices=["run"])
+    p.add_argument("--work", required=True)
+    p.add_argument("--window", required=True)
+    args = p.parse_args()
+
+    ns = os.environ.get("BOARDS_TARGET_NAMESPACE", "")
+    if not ns:
+        log("needs BOARDS_TARGET_NAMESPACE")
+        return 2
+
+    binary = "istioctl"
+    version = tool_version(binary)
+    try:
+        # KUBECONFIG comes from the environment boards built.
+        res = subprocess.run([binary, "analyze", "-n", ns], capture_output=True, text=True)
+    except OSError as err:
+        log("istioctl analyze: %s" % err)
+        return 1
+    at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # The raw output goes to stdout, which boards keeps as raw.txt.
+    sys.stdout.write(res.stdout)
+    sys.stdout.write(res.stderr)
+    sys.stdout.flush()
+
+    # istioctl prints its messages on stdout and its progress on stderr.
+    messages = parse(res.stdout)
+    if not messages and CLEAN not in res.stdout:
+        log("istioctl analyze exited %d with no message and no %r line: a tool failure, not a clean bill" % (res.returncode, CLEAN))
+        return 1
+
+    alarming = [m for m in messages if m[0] in ("Error", "Warning")]
+    culprits, rules = [], []
+    for _, rule, kind, ref in alarming:
+        c = culprit(kind, ref)
+        if c and c not in culprits:
+            culprits.append(c)
+        if rule not in rules:
+            rules.append(rule)
+    write_verdict(args.work, {
+        "schemaVersion": "boards.verdict/v1",
+        "tool": {"name": "istioctl-analyze", "version": version},
+        "alarmed": bool(alarming),
+        "events": [{"at": at, "type": "alarm"}] if alarming else [],
+        "culprits": culprits,
+        "ruleIds": rules,
+        "patch": None,
+        "measurements": {},
+        "prose": None,
+        "tokens": None,
+    })
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

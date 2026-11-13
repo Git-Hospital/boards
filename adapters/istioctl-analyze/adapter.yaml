@@ -1,0 +1,22 @@
+# `istioctl analyze` on the case's target namespace, once. It is a
+# configuration linter, so it reads the cluster, prints what it finds and
+# exits; it proposes no fixes. The adapter script `run` turns its text
+# output into the verdict; the mapping below is frozen for the suite (D10).
+# It needs `istioctl` and python3 on PATH.
+name: istioctl-analyze
+category: config-linter
+tracks: [mesh]
+mode: one-shot
+output: structured
+proposesFixes: false
+needsLLM: false
+alarm: >-
+  an alarm when `istioctl analyze -n <target namespace>` prints at least one
+  message of level Error or Warning; messages of level Info never alarm, and
+  there is no resolve (one-shot)
+culprits: >-
+  exactly the objects named in the Error and Warning messages, from the
+  `(Kind namespace/name)` part of each message line, once each; a message that
+  names a cluster-scoped or unparsable object contributes no culprit, and none
+  are inferred from its text
+command: ["{{dir}}/run"]
