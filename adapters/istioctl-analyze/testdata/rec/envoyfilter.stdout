@@ -1,0 +1,26 @@
+[
+	{
+		"code": "IST0133",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0133/?ref=istioctl-analyze",
+		"level": "Warning",
+		"message": "Schema validation warning: EnvoyFilter exposes internal implementation details that may change at any time. Prefer other APIs if possible, and exercise extreme caution, especially around upgrades.",
+		"origin": "EnvoyFilter demo/rate-limit",
+		"reference": "in/envoyfilter.yaml:1"
+	},
+	{
+		"code": "IST0133",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0133/?ref=istioctl-analyze",
+		"level": "Warning",
+		"message": "Schema validation warning: using deprecated types by name without typed_config; envoy.filters.http.local_ratelimit",
+		"origin": "EnvoyFilter demo/rate-limit",
+		"reference": "in/envoyfilter.yaml:1"
+	},
+	{
+		"code": "IST0151",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0151/?ref=istioctl-analyze",
+		"level": "Warning",
+		"message": "This EnvoyFilter does not have a priority and has a relative patch operation set which can cause the EnvoyFilter not to be applied. Using the INSERT_FIRST of ADD option or setting the priority may help in ensuring the EnvoyFilter is applied correctly.",
+		"origin": "EnvoyFilter demo/rate-limit",
+		"reference": "in/envoyfilter.yaml:1"
+	}
+]

@@ -68,6 +68,7 @@ internal/execx/             exec with timeout, cancellation and an env allowlist
 internal/prom/              Prometheus client, copied from MeshMedic with attribution
 adapters/<tool>/            adapter.yaml plus a script or a small Go program
 adapters/dummy/{oracle,silent,panic}/
+adapters/{meshmedic,istioctl-analyze}/   real tools: a watcher and a one-shot config linter
 cases/{mesh,helm,code}/<id>/case.yaml   plus manifests, patches, fixtures
 testbed/                    testbed.lock, app manifests, kind configs
 holdout/<suite>.sha256      published digests of unrevealed exam cases

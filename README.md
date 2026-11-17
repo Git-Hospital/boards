@@ -53,6 +53,9 @@ cluster up for inspection.
 To score a real tool, pass its adapter instead: [`adapters/meshmedic`](adapters/meshmedic)
 needs a `meshmedic` build after v1.0.0 (the first with `watch --events`) and
 python3 on `PATH`.
+[`adapters/istioctl-analyze`](adapters/istioctl-analyze) runs `istioctl analyze`
+once on the target namespace (a config linter, so it is scored within its own
+category) and needs `istioctl` and python3 on `PATH`.
 
 ## What is scored
 

@@ -1,0 +1,10 @@
+[
+	{
+		"code": "IST0101",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0101/?ref=istioctl-analyze",
+		"level": "Error",
+		"message": "Referenced host+subset in destinationrule not found: \"payments+v3\"",
+		"origin": "VirtualService demo/payments",
+		"reference": "in/ist0101.yaml:8"
+	}
+]

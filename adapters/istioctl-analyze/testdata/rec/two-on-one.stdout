@@ -1,0 +1,26 @@
+[
+	{
+		"code": "IST0101",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0101/?ref=istioctl-analyze",
+		"level": "Error",
+		"message": "Referenced gateway not found: \"nogateway\"",
+		"origin": "VirtualService demo/payments",
+		"reference": "in/two-on-one.yaml:6"
+	},
+	{
+		"code": "IST0101",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0101/?ref=istioctl-analyze",
+		"level": "Error",
+		"message": "Referenced host+subset in destinationrule not found: \"payments+v3\"",
+		"origin": "VirtualService demo/payments",
+		"reference": "in/two-on-one.yaml:9"
+	},
+	{
+		"code": "IST0132",
+		"documentationUrl": "https://istio.io/v1.24/docs/reference/config/analysis/ist0132/?ref=istioctl-analyze",
+		"level": "Warning",
+		"message": "one or more host [payments] defined in VirtualService demo/payments not found in Gateway demo/nogateway.",
+		"origin": "VirtualService demo/payments",
+		"reference": "in/two-on-one.yaml:6"
+	}
+]
